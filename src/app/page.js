@@ -1,66 +1,131 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client'
+import React, { useState } from 'react'
+import RenderPages from '@/Utils/RenderPages'
+import { useAuth } from '@/context/AuthContext'
+import LoginPage from '@/Utils/Login/LoginPage'
 
-export default function Home() {
+function Page() {
+  const [activePage, setActivePage] = useState('/')
+  const { isAuthenticated, user, logout } = useAuth()
+
+  // ✅ Mostrar login si no está autenticado
+  if (!isAuthenticated) {
+    return <LoginPage />
+  }
+
+  // ✅ Mostrar la aplicación si está autenticado
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.js file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className='Container'>
+      <header>
+        <div className="header-content">
+          <h1>Management System</h1>
+          <div className="user-info">
+            <span>Bienvenido, {user?.name || user?.email}</span>
+            <button className="logout-btn" onClick={logout}>
+              Cerrar Sesión
+            </button>
+          </div>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+        <nav>
+          <BtnHeader
+            text="Home"
+            page="/"
+            activePage={activePage}
+            setActivePage={setActivePage}
+          />
+
+          <BtnHeader
+            text="Zonas Electorales"
+            page="/zonas-electorales"
+            activePage={activePage}
+            setActivePage={setActivePage}
+          />
+
+          <BtnHeader
+            text="Familias"
+            page="/familias"
+            activePage={activePage}
+            setActivePage={setActivePage}
+          />
+
+          <BtnHeader
+            text="Reportes"
+            page="/reportes"
+            activePage={activePage}
+            setActivePage={setActivePage}
+          />
+
+          <BtnHeader
+            text="Configuracion"
+            page="/configuracion"
+            activePage={activePage}
+            setActivePage={setActivePage}
+          />
+
+          <BtnHeader
+            text="Reportes Imprimir"
+            page="/reportes-imprimir"
+            activePage={activePage}
+            setActivePage={setActivePage}
+          />
+        </nav>
+      </header>
+
+      <main>
+        <section className="page-view">
+          <RenderPages activePage={activePage} />
+        </section>
       </main>
+
+      <style jsx>{`
+        .header-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0 20px;
+        }
+
+        .user-info {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .user-info span {
+          font-size: 14px;
+          color: #374151;
+        }
+
+        .logout-btn {
+          padding: 8px 16px;
+          background: #dc2626;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.2s ease;
+        }
+
+        .logout-btn:hover {
+          background: #b91c1c;
+        }
+      `}</style>
     </div>
-  );
+  )
 }
+
+function BtnHeader({ text, page, setActivePage, activePage }) {
+  return (
+    <button
+      className={activePage === page ? "active" : ""}
+      onClick={() => setActivePage(page)}
+    >
+      {text}
+    </button>
+  )
+}
+
+export default Page
