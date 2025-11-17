@@ -5,8 +5,7 @@
       "Bash(node migrate_to_encrypted.js:*)",
       "Bash(npm run dev:*)",
       "Bash(npm install:*)",
-      "Bash(curl:*)",
-      "Bash(git add:*)"
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
