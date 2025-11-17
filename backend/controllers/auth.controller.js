@@ -8,6 +8,69 @@ const { HTTP_STATUS, SUCCESS, ERRORS } = require('../config/constants');
  */
 
 class AuthController {
+
+  async register(nombre, email, password, rol = 'user') {
+    try {
+      // Validar campos
+      if (!nombre || !email || !password) {
+        throw new Error('Todos los campos son obligatorios');
+      }
+
+      // Buscar usuarios para verificar duplicado
+      const [users] = await readPool.query('SELECT * FROM usuarios');
+
+      for (const u of users) {
+        try {
+          const decrypted = await cryptoService.decrypt({
+            encrypted: u.email_encrypted,
+            iv: u.email_iv,
+            authTag: u.email_tag
+          });
+          if (decrypted === email) {
+            throw new Error('El email ya está registrado');
+          }
+        } catch { }
+      }
+
+      // Cifrar nombre, email y rol
+      const encryptedNombre = await cryptoService.encrypt(nombre);
+      const encryptedEmail = await cryptoService.encrypt(email);
+      const encryptedRol = await cryptoService.encrypt(rol);
+
+      // Hash de contraseña
+      const hashedPassword = await bcrypt.hash(
+        password,
+        SECURITY.BCRYPT_SALT_ROUNDS
+      );
+
+      // Guardar usuario
+      const [result] = await writePool.query(
+        `INSERT INTO usuarios (
+        nombre_encrypted, nombre_iv, nombre_tag,
+        email_encrypted, email_iv, email_tag,
+        rol_encrypted, rol_iv, rol_tag,
+        password, activo, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+        [
+          encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag,
+          encryptedEmail.encrypted, encryptedEmail.iv, encryptedEmail.authTag,
+          encryptedRol.encrypted, encryptedRol.iv, encryptedRol.authTag,
+          hashedPassword
+        ]
+      );
+
+      return {
+        id: result.insertId,
+        nombre,
+        email,
+        rol
+      };
+
+    } catch (error) {
+      throw error;
+    }
+  }
+
   /**
    * POST /api/auth/login
    */

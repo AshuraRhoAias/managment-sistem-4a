@@ -48,4 +48,12 @@ router.get('/sessions',
   authController.getUserSessions
 );
 
+// POST /api/auth/register - Registro de usuario
+router.post('/register',
+  authLimiter,
+  securityMiddleware.trackLoginAttempt, // opcional si quieres auditoría igual
+  authController.register
+);
+
+
 module.exports = router;

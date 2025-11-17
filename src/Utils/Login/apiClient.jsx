@@ -61,28 +61,28 @@ const apiClient = {
     },
 
     async login(email, password) {
-        return this.request('/api/auth/login', {
+        return this.request('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password })
         })
     },
 
     async register(nombre, email, password) {
-        return this.request('/api/auth/register', {
+        return this.request('/auth/register', {
             method: 'POST',
             body: JSON.stringify({ nombre, email, password })
         })
     },
 
     async decryptPassword(userId, masterPhrase) {
-        return this.request('/api/auth/decrypt-password', {
+        return this.request('/auth/decrypt-password', {
             method: 'POST',
             body: JSON.stringify({ userId, masterPhrase })
         })
     },
 
     async verifyToken() {
-        return this.request('/api/auth/verify', {
+        return this.request('/auth/verify', {
             method: 'GET'
         })
     }

@@ -185,7 +185,7 @@ const exportLimiter = rateLimit({
 const writeSlowDown = slowDown({
   windowMs: 60 * 1000, // 1 minuto
   delayAfter: 10, // Permitir 10 peticiones rápidas
-  delayMs: 500, // Delay incremental de 500ms
+  delayMs: () => 500, // Delay incremental de 500ms
   maxDelayMs: 5000, // Máximo delay de 5 segundos
   keyGenerator: (req) => {
     const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
@@ -200,7 +200,7 @@ const writeSlowDown = slowDown({
 const searchSlowDown = slowDown({
   windowMs: 60 * 1000, // 1 minuto
   delayAfter: 20, // Permitir 20 búsquedas rápidas
-  delayMs: 300, // Delay incremental de 300ms
+  delayMs: () => 300, // Delay incremental de 300ms
   maxDelayMs: 3000, // Máximo delay de 3 segundos
   keyGenerator: (req) => {
     const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';

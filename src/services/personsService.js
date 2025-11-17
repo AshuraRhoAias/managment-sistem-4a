@@ -12,7 +12,7 @@ const personsService = {
    */
   getAll: async (params = {}) => {
     try {
-      const response = await api.get('/persons', { params });
+      const response = await api.get('/electoral/persons', { params });
       return response.data;
     } catch (error) {
       throw error;
@@ -24,7 +24,7 @@ const personsService = {
    */
   getById: async (id) => {
     try {
-      const response = await api.get(`/persons/${id}`);
+      const response = await api.get(`/electoral/persons/${id}`);
       return response.data;
     } catch (error) {
       throw error;
@@ -32,13 +32,11 @@ const personsService = {
   },
 
   /**
-   * Buscar personas (búsqueda cifrada)
+   * Buscar por CURP
    */
-  search: async (query, params = {}) => {
+  searchByCURP: async (curp) => {
     try {
-      const response = await api.get('/persons/search', {
-        params: { q: query, ...params },
-      });
+      const response = await api.get(`/electoral/search/curp/${curp}`);
       return response.data;
     } catch (error) {
       throw error;
@@ -46,11 +44,11 @@ const personsService = {
   },
 
   /**
-   * Obtener personas por familia
+   * Obtener estadísticas de personas
    */
-  getByFamily: async (familyId) => {
+  getStats: async () => {
     try {
-      const response = await api.get(`/persons/family/${familyId}`);
+      const response = await api.get('/electoral/persons/stats');
       return response.data;
     } catch (error) {
       throw error;
@@ -62,19 +60,7 @@ const personsService = {
    */
   create: async (data) => {
     try {
-      const response = await api.post('/persons', data);
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  },
-
-  /**
-   * Crear múltiples personas (batch)
-   */
-  createBatch: async (persons) => {
-    try {
-      const response = await api.post('/persons/batch', { persons });
+      const response = await api.post('/electoral/persons', data);
       return response.data;
     } catch (error) {
       throw error;
@@ -86,7 +72,7 @@ const personsService = {
    */
   update: async (id, data) => {
     try {
-      const response = await api.put(`/persons/${id}`, data);
+      const response = await api.put(`/electoral/persons/${id}`, data);
       return response.data;
     } catch (error) {
       throw error;
@@ -98,7 +84,7 @@ const personsService = {
    */
   delete: async (id) => {
     try {
-      const response = await api.delete(`/persons/${id}`);
+      const response = await api.delete(`/electoral/persons/${id}`);
       return response.data;
     } catch (error) {
       throw error;

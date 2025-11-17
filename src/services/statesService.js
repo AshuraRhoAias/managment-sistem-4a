@@ -12,7 +12,7 @@ const statesService = {
    */
   getAll: async (params = {}) => {
     try {
-      const response = await api.get('/states', { params });
+      const response = await api.get('/electoral/states', { params });
       return response.data;
     } catch (error) {
       throw error;
@@ -24,7 +24,7 @@ const statesService = {
    */
   getById: async (id) => {
     try {
-      const response = await api.get(`/states/${id}`);
+      const response = await api.get(`/electoral/states/${id}`);
       return response.data;
     } catch (error) {
       throw error;
@@ -36,7 +36,7 @@ const statesService = {
    */
   create: async (data) => {
     try {
-      const response = await api.post('/states', data);
+      const response = await api.post('/electoral/states', data);
       return response.data;
     } catch (error) {
       throw error;
@@ -48,7 +48,7 @@ const statesService = {
    */
   update: async (id, data) => {
     try {
-      const response = await api.put(`/states/${id}`, data);
+      const response = await api.put(`/electoral/states/${id}`, data);
       return response.data;
     } catch (error) {
       throw error;
@@ -60,7 +60,7 @@ const statesService = {
    */
   delete: async (id) => {
     try {
-      const response = await api.delete(`/states/${id}`);
+      const response = await api.delete(`/electoral/states/${id}`);
       return response.data;
     } catch (error) {
       throw error;
@@ -72,7 +72,7 @@ const statesService = {
    */
   search: async (query) => {
     try {
-      const response = await api.get('/states/search', { params: { q: query } });
+      const response = await api.get('/electoral/states/search', { params: { q: query } });
       return response.data;
     } catch (error) {
       throw error;
@@ -80,11 +80,11 @@ const statesService = {
   },
 
   /**
-   * Obtener estadísticas del estado
+   * Obtener delegaciones del estado
    */
-  getStats: async (id) => {
+  getDelegations: async (id) => {
     try {
-      const response = await api.get(`/states/${id}/stats`);
+      const response = await api.get(`/electoral/states/${id}/delegations`);
       return response.data;
     } catch (error) {
       throw error;

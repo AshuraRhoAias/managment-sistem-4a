@@ -28,7 +28,7 @@ const writePool = mysql.createPool({
   decimalNumbers: false,
   trace: process.env.NODE_ENV === 'development',
   connectTimeout: 60000,
-  acquireTimeout: 60000,
+  connectTimeout: 10000,
   namedPlaceholders: true,
 });
 
