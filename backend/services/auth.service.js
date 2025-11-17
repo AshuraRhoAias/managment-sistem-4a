@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const { readPool, writePool } = require('../config/database');
 const authMiddleware = require('../middleware/auth.middleware');
 const securityMiddleware = require('../middleware/security.middleware');
+const advancedSecurity = require('../middleware/advanced-security.middleware');
+const cryptoService = require('./base/CryptoService');
 const { SECURITY, ERRORS } = require('../config/constants');
 
 /**
@@ -18,20 +20,42 @@ class AuthService {
     try {
       const clientIP = securityMiddleware.getClientIP(req);
 
-      // Buscar usuario por email
+      // Buscar TODOS los usuarios activos (ya que email está cifrado)
       const [users] = await readPool.query(
-        'SELECT * FROM usuarios WHERE email = ? AND activo = 1',
-        [email]
+        'SELECT * FROM usuarios WHERE activo = 1'
       );
 
       if (users.length === 0) {
         // Registrar intento fallido
-        securityMiddleware.recordFailedLogin(req);
-
+        await advancedSecurity.recordFailedLogin(req);
         throw new Error(ERRORS.INVALID_CREDENTIALS);
       }
 
-      const user = users[0];
+      // Buscar usuario descifrando emails
+      let user = null;
+      for (const u of users) {
+        try {
+          const decryptedEmail = await cryptoService.decrypt({
+            encrypted: u.email_encrypted,
+            iv: u.email_iv,
+            authTag: u.email_tag
+          });
+
+          if (decryptedEmail === email) {
+            user = u;
+            break;
+          }
+        } catch (err) {
+          // Ignorar errores de descifrado (datos corruptos)
+          continue;
+        }
+      }
+
+      if (!user) {
+        // Registrar intento fallido
+        await advancedSecurity.recordFailedLogin(req);
+        throw new Error(ERRORS.INVALID_CREDENTIALS);
+      }
 
       // Verificar si está bloqueado temporalmente
       if (user.bloqueado_hasta && new Date(user.bloqueado_hasta) > new Date()) {
@@ -43,30 +67,42 @@ class AuthService {
       const isPasswordValid = await bcrypt.compare(password, user.password);
 
       if (!isPasswordValid) {
-        // Incrementar intentos fallidos
-        await this.incrementFailedAttempts(user.id);
-
-        // Registrar en middleware de seguridad
-        securityMiddleware.recordFailedLogin(req);
+        // Registrar intento fallido con sistema avanzado
+        await advancedSecurity.recordFailedLogin(req, user.id);
 
         throw new Error(ERRORS.INVALID_CREDENTIALS);
       }
 
       // Login exitoso - limpiar intentos fallidos
-      await this.resetFailedAttempts(user.id);
-      securityMiddleware.clearLoginAttempts(req);
+      await advancedSecurity.clearLoginAttempts(req, user.id);
 
       // Generar tokens
       const { token, jti } = authMiddleware.generateToken(user);
       const { token: refreshToken, jti: refreshJti } = authMiddleware.generateRefreshToken(user);
 
-      // Guardar sesión
+      // Obtener geolocalización de IP
+      const ipGeo = await advancedSecurity.getIPGeolocation(clientIP);
+
+      // Obtener ubicación del navegador de headers
+      const browserLat = req.headers['x-browser-latitude'];
+      const browserLon = req.headers['x-browser-longitude'];
+      const locationAcc = req.headers['x-location-accuracy'];
+
+      // Guardar sesión con geolocalización
       await this.createSession({
         usuario_id: user.id,
         token_jti: jti,
         refresh_token_jti: refreshJti,
         ip_address: clientIP,
         user_agent: req.headers['user-agent'] || 'unknown',
+        ip_latitude: ipGeo?.latitude,
+        ip_longitude: ipGeo?.longitude,
+        ip_country: ipGeo?.country,
+        ip_city: ipGeo?.city,
+        ip_isp: ipGeo?.isp,
+        browser_latitude: browserLat ? parseFloat(browserLat) : null,
+        browser_longitude: browserLon ? parseFloat(browserLon) : null,
+        location_accuracy: locationAcc ? parseFloat(locationAcc) : null,
       });
 
       // Actualizar último login
@@ -75,17 +111,40 @@ class AuthService {
         [user.id]
       );
 
-      // Registrar en auditoría
-      await this.logAudit(user.id, 'LOGIN', clientIP, req.headers['user-agent']);
+      // Registrar en auditoría con geolocalización
+      await this.logAudit(user.id, 'LOGIN', clientIP, req.headers['user-agent'], ipGeo, {
+        browser_latitude: browserLat,
+        browser_longitude: browserLon,
+        location_accuracy: locationAcc
+      });
+
+      // Descifrar datos del usuario para respuesta
+      const decryptedNombre = await cryptoService.decrypt({
+        encrypted: user.nombre_encrypted,
+        iv: user.nombre_iv,
+        authTag: user.nombre_tag
+      });
+
+      const decryptedEmail = await cryptoService.decrypt({
+        encrypted: user.email_encrypted,
+        iv: user.email_iv,
+        authTag: user.email_tag
+      });
+
+      const decryptedRol = await cryptoService.decrypt({
+        encrypted: user.rol_encrypted,
+        iv: user.rol_iv,
+        authTag: user.rol_tag
+      });
 
       return {
         token,
         refreshToken,
         user: {
           id: user.id,
-          nombre: user.nombre,
-          email: user.email,
-          rol: user.rol,
+          nombre: decryptedNombre,
+          email: decryptedEmail,
+          rol: decryptedRol,
         },
       };
     } catch (error) {
@@ -170,15 +229,36 @@ class AuthService {
    */
   async createSession(sessionData) {
     try {
-      const { usuario_id, token_jti, refresh_token_jti, ip_address, user_agent } = sessionData;
+      const {
+        usuario_id,
+        token_jti,
+        refresh_token_jti,
+        ip_address,
+        user_agent,
+        ip_latitude,
+        ip_longitude,
+        ip_country,
+        ip_city,
+        ip_isp,
+        browser_latitude,
+        browser_longitude,
+        location_accuracy
+      } = sessionData;
 
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 días
 
       await writePool.query(
-        `INSERT INTO sesiones (usuario_id, token_jti, refresh_token_jti, ip_address, user_agent, expires_at, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, 1)`,
-        [usuario_id, token_jti, refresh_token_jti, ip_address, user_agent, expiresAt]
+        `INSERT INTO sesiones (
+          usuario_id, token_jti, refresh_token_jti, ip_address, user_agent, expires_at, is_active,
+          ip_latitude, ip_longitude, ip_country, ip_city, ip_isp,
+          browser_latitude, browser_longitude, location_accuracy
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          usuario_id, token_jti, refresh_token_jti, ip_address, user_agent, expiresAt,
+          ip_latitude, ip_longitude, ip_country, ip_city, ip_isp,
+          browser_latitude, browser_longitude, location_accuracy
+        ]
       );
 
       return true;
@@ -241,12 +321,29 @@ class AuthService {
   /**
    * Registrar en auditoría
    */
-  async logAudit(userId, action, ipAddress, userAgent, details = {}) {
+  async logAudit(userId, action, ipAddress, userAgent, ipGeo = null, browserLocation = {}) {
     try {
       await writePool.query(
-        `INSERT INTO auditoria_accesos (id_usuario, accion, ip_address, user_agent, detalles, created_at)
-         VALUES (?, ?, ?, ?, ?, NOW())`,
-        [userId, action, ipAddress, userAgent, JSON.stringify(details)]
+        `INSERT INTO auditoria_accesos (
+          id_usuario, accion, ip_address, user_agent,
+          ip_latitude, ip_longitude, ip_country, ip_city,
+          browser_latitude, browser_longitude, location_accuracy,
+          detalles, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          userId,
+          action,
+          ipAddress,
+          userAgent,
+          ipGeo?.latitude,
+          ipGeo?.longitude,
+          ipGeo?.country,
+          ipGeo?.city,
+          browserLocation?.browser_latitude ? parseFloat(browserLocation.browser_latitude) : null,
+          browserLocation?.browser_longitude ? parseFloat(browserLocation.browser_longitude) : null,
+          browserLocation?.location_accuracy ? parseFloat(browserLocation.location_accuracy) : null,
+          JSON.stringify({ ipGeo, browserLocation })
+        ]
       );
 
       return true;

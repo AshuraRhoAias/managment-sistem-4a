@@ -1,6 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { AuthProvider } from "@/Utils/Login/AuthContext"; // ← CORREGIDO: importar desde AuthContext
+import { AuthProvider } from "@/Utils/Login/AuthContext";
+import LocationGuard from "@/components/LocationGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,9 +22,11 @@ export default function RootLayout({ children }) {
   return (
     <html lang="es">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <LocationGuard>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </LocationGuard>
       </body>
     </html>
   );

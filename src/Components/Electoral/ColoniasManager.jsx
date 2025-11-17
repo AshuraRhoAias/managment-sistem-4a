@@ -1,0 +1,242 @@
+/**
+ * ============================================
+ * COMPONENTE: Colonias Manager
+ * Gestión completa de Colonias
+ * ============================================
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import { useColonias, useDelegaciones } from '@/hooks/useElectoralData';
+import Card from '../UI/Card';
+import Table from '../UI/Table';
+import Modal from '../UI/Modal';
+import Input from '../UI/Input';
+import Button from '../UI/Button';
+import Alert from '../UI/Alert';
+
+const ColoniasManager = ({ delegacionId = null }) => {
+  const { colonias, loading, error, create, update, delete: deleteColonia } = useColonias(delegacionId);
+  const { delegaciones } = useDelegaciones();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingColonia, setEditingColonia] = useState(null);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    codigo_postal: '',
+    id_delegacion: delegacionId || '',
+  });
+  const [formError, setFormError] = useState('');
+  const [alert, setAlert] = useState(null);
+
+  const handleOpenCreate = () => {
+    setEditingColonia(null);
+    setFormData({
+      nombre: '',
+      codigo_postal: '',
+      id_delegacion: delegacionId || '',
+    });
+    setFormError('');
+    setModalOpen(true);
+  };
+
+  const handleOpenEdit = (colonia) => {
+    setEditingColonia(colonia);
+    setFormData({
+      nombre: colonia.nombre,
+      codigo_postal: colonia.codigo_postal,
+      id_delegacion: colonia.id_delegacion,
+    });
+    setFormError('');
+    setModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setModalOpen(false);
+    setEditingColonia(null);
+    setFormData({
+      nombre: '',
+      codigo_postal: '',
+      id_delegacion: delegacionId || '',
+    });
+    setFormError('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormError('');
+
+    if (!formData.nombre || !formData.codigo_postal || !formData.id_delegacion) {
+      setFormError('Todos los campos son obligatorios');
+      return;
+    }
+
+    try {
+      let result;
+      if (editingColonia) {
+        result = await update(editingColonia.id, formData);
+      } else {
+        result = await create(formData);
+      }
+
+      if (result.success) {
+        setAlert({
+          type: 'success',
+          message: `Colonia ${editingColonia ? 'actualizada' : 'creada'} exitosamente`,
+        });
+        handleCloseModal();
+      } else {
+        setFormError(result.error || 'Error al guardar');
+      }
+    } catch (err) {
+      setFormError('Error de conexión');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Estás seguro de eliminar esta colonia?')) return;
+
+    const result = await deleteColonia(id);
+    if (result.success) {
+      setAlert({
+        type: 'success',
+        message: 'Colonia eliminada exitosamente',
+      });
+    } else {
+      setAlert({
+        type: 'error',
+        message: result.error || 'Error al eliminar',
+      });
+    }
+  };
+
+  const columns = [
+    { key: 'nombre', label: 'Nombre', sortable: true },
+    { key: 'codigo_postal', label: 'Código Postal', sortable: true },
+    {
+      key: 'id_delegacion',
+      label: 'Delegación',
+      render: (value) => {
+        const delegacion = delegaciones.find((d) => d.id === value);
+        return delegacion ? delegacion.nombre : value;
+      },
+    },
+    {
+      key: 'created_at',
+      label: 'Fecha Creación',
+      sortable: true,
+      render: (value) => new Date(value).toLocaleDateString('es-MX'),
+    },
+  ];
+
+  const actions = (colonia) => (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => handleOpenEdit(colonia)}>
+        ✏️ Editar
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => handleDelete(colonia.id)}>
+        🗑️ Eliminar
+      </Button>
+    </>
+  );
+
+  return (
+    <div className="space-y-6">
+      {alert && (
+        <Alert
+          type={alert.type}
+          message={alert.message}
+          onClose={() => setAlert(null)}
+        />
+      )}
+
+      <Card
+        title="Gestión de Colonias"
+        subtitle="Administra las colonias del sistema"
+        headerAction={
+          <Button onClick={handleOpenCreate}>+ Nueva Colonia</Button>
+        }
+      >
+        {error && <Alert type="error" message={error} className="mb-4" />}
+
+        <Table
+          columns={columns}
+          data={colonias}
+          actions={actions}
+          loading={loading}
+          striped
+          hoverable
+          pagination
+          itemsPerPage={10}
+        />
+      </Card>
+
+      {/* Modal Crear/Editar */}
+      <Modal
+        isOpen={modalOpen}
+        onClose={handleCloseModal}
+        title={editingColonia ? 'Editar Colonia' : 'Crear Colonia'}
+        footer={
+          <>
+            <Button variant="ghost" onClick={handleCloseModal}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmit}>
+              {editingColonia ? 'Actualizar' : 'Crear'}
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {formError && <Alert type="error" message={formError} />}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Delegación <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={formData.id_delegacion}
+              onChange={(e) =>
+                setFormData({ ...formData, id_delegacion: e.target.value })
+              }
+              className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              required
+              disabled={!!delegacionId}
+            >
+              <option value="">Seleccionar delegación</option>
+              {delegaciones.map((delegacion) => (
+                <option key={delegacion.id} value={delegacion.id}>
+                  {delegacion.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Input
+            label="Nombre"
+            name="nombre"
+            value={formData.nombre}
+            onChange={(e) =>
+              setFormData({ ...formData, nombre: e.target.value })
+            }
+            placeholder="Ej: Centro"
+            required
+          />
+
+          <Input
+            label="Código Postal"
+            name="codigo_postal"
+            value={formData.codigo_postal}
+            onChange={(e) =>
+              setFormData({ ...formData, codigo_postal: e.target.value })
+            }
+            placeholder="Ej: 01000"
+            required
+          />
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+export default ColoniasManager;

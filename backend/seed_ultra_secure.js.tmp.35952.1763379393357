@@ -1,0 +1,333 @@
+/**
+ * ============================================
+ * SEED SCRIPT: Ultra-Secure Database
+ * ALL fields encrypted with 5-layer encryption
+ * ============================================
+ */
+
+const { writePool } = require('./config/database');
+const cryptoService = require('./services/base/CryptoService');
+const bcrypt = require('bcryptjs');
+
+async function seedDatabase() {
+  console.log('🌱 Starting ultra-secure database seeding...\n');
+
+  try {
+    // ==================== 1. USUARIO ADMIN ====================
+    console.log('👤 Creating admin user...');
+
+    const nombreCifrado = await cryptoService.encrypt('Administrador del Sistema');
+    const emailCifrado = await cryptoService.encrypt('test@test.com');
+    const rolCifrado = await cryptoService.encrypt('ADMIN');
+    const passwordHash = await bcrypt.hash('123456', 12);
+
+    await writePool.query(
+      `INSERT INTO usuarios (
+        nombre_encrypted, nombre_iv, nombre_tag,
+        email_encrypted, email_iv, email_tag,
+        password,
+        rol_encrypted, rol_iv, rol_tag,
+        activo
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        nombreCifrado.encrypted, nombreCifrado.iv, nombreCifrado.authTag,
+        emailCifrado.encrypted, emailCifrado.iv, emailCifrado.authTag,
+        passwordHash,
+        rolCifrado.encrypted, rolCifrado.iv, rolCifrado.authTag
+      ]
+    );
+
+    const [userResult] = await writePool.query('SELECT id FROM usuarios LIMIT 1');
+    const adminId = userResult[0].id;
+    console.log(`  ✅ Usuario creado (ID: ${adminId})`);
+
+    // ==================== 2. ESTADOS ====================
+    console.log('\n🗺️  Creating estados...');
+
+    const estados = [
+      { codigo: 'CDMX', nombre: 'Ciudad de México' },
+      { codigo: 'JAL', nombre: 'Jalisco' },
+      { codigo: 'NL', nombre: 'Nuevo León' },
+      { codigo: 'MEX', nombre: 'Estado de México' }
+    ];
+
+    const estadosIds = {};
+
+    for (const estado of estados) {
+      const codigoCifrado = await cryptoService.encrypt(estado.codigo);
+      const nombreCifrado = await cryptoService.encrypt(estado.nombre);
+
+      const [result] = await writePool.query(
+        `INSERT INTO estados (
+          codigo_encrypted, codigo_iv, codigo_tag,
+          nombre_encrypted, nombre_iv, nombre_tag
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          codigoCifrado.encrypted, codigoCifrado.iv, codigoCifrado.authTag,
+          nombreCifrado.encrypted, nombreCifrado.iv, nombreCifrado.authTag
+        ]
+      );
+
+      estadosIds[estado.codigo] = result.insertId;
+      console.log(`  ✅ Estado: ${estado.nombre} (ID: ${result.insertId})`);
+    }
+
+    // ==================== 3. DELEGACIONES ====================
+    console.log('\n🏛️  Creating delegaciones...');
+
+    const delegaciones = [
+      { nombre: 'Cuauhtémoc', estado: 'CDMX' },
+      { nombre: 'Miguel Hidalgo', estado: 'CDMX' },
+      { nombre: 'Guadalajara Centro', estado: 'JAL' },
+      { nombre: 'San Pedro Garza García', estado: 'NL' }
+    ];
+
+    const delegacionesIds = {};
+
+    for (const deleg of delegaciones) {
+      const nombreCifrado = await cryptoService.encrypt(deleg.nombre);
+
+      const [result] = await writePool.query(
+        `INSERT INTO delegaciones (
+          id_estado,
+          nombre_encrypted, nombre_iv, nombre_tag
+        ) VALUES (?, ?, ?, ?)`,
+        [
+          estadosIds[deleg.estado],
+          nombreCifrado.encrypted, nombreCifrado.iv, nombreCifrado.authTag
+        ]
+      );
+
+      delegacionesIds[deleg.nombre] = result.insertId;
+      console.log(`  ✅ Delegación: ${deleg.nombre} (ID: ${result.insertId})`);
+    }
+
+    // ==================== 4. COLONIAS ====================
+    console.log('\n🏘️  Creating colonias...');
+
+    const colonias = [
+      { nombre: 'Roma Norte', cp: '06700', delegacion: 'Cuauhtémoc' },
+      { nombre: 'Condesa', cp: '06140', delegacion: 'Cuauhtémoc' },
+      { nombre: 'Polanco', cp: '11560', delegacion: 'Miguel Hidalgo' },
+      { nombre: 'Centro Histórico', cp: '44100', delegacion: 'Guadalajara Centro' }
+    ];
+
+    const coloniasIds = {};
+
+    for (const colonia of colonias) {
+      const nombreCifrado = await cryptoService.encrypt(colonia.nombre);
+      const cpCifrado = await cryptoService.encrypt(colonia.cp);
+
+      const [result] = await writePool.query(
+        `INSERT INTO colonias (
+          id_delegacion,
+          nombre_encrypted, nombre_iv, nombre_tag,
+          codigo_postal_encrypted, codigo_postal_iv, codigo_postal_tag
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          delegacionesIds[colonia.delegacion],
+          nombreCifrado.encrypted, nombreCifrado.iv, nombreCifrado.authTag,
+          cpCifrado.encrypted, cpCifrado.iv, cpCifrado.authTag
+        ]
+      );
+
+      coloniasIds[colonia.nombre] = result.insertId;
+      console.log(`  ✅ Colonia: ${colonia.nombre}, CP ${colonia.cp} (ID: ${result.insertId})`);
+    }
+
+    // ==================== 5. FAMILIAS ====================
+    console.log('\n👨‍👩‍👧‍👦 Creating familias...');
+
+    const familias = [
+      { nombre: 'López García', direccion: 'Av. Álvaro Obregón 123', colonia: 'Roma Norte', notas: 'Familia muy activa en la comunidad' },
+      { nombre: 'Martínez Hernández', direccion: 'Calle Tamaulipas 45', colonia: 'Condesa', notas: 'Contacto directo con presidente de colonia' },
+      { nombre: 'González Pérez', direccion: 'Polanco Ave 789', colonia: 'Polanco', notas: 'Familia numerosa, requiere seguimiento' },
+      { nombre: 'Rodríguez Sánchez', direccion: 'Paseo de la Reforma 1010', colonia: 'Polanco', notas: null },
+      { nombre: 'Ramírez Torres', direccion: 'Calle Morelos 234', colonia: 'Centro Histórico', notas: 'Interesados en programas sociales' },
+      { nombre: 'Flores Morales', direccion: 'Av. Insurgentes 567', colonia: 'Roma Norte', notas: null },
+      { nombre: 'Castro Ruiz', direccion: 'Calle Durango 890', colonia: 'Condesa', notas: 'Familia joven, primer contacto' },
+      { nombre: 'Mendoza Silva', direccion: 'Calle Mazatlán 345', colonia: 'Condesa', notas: null }
+    ];
+
+    const familiasIds = {};
+
+    for (const familia of familias) {
+      const nombreCifrado = await cryptoService.encrypt(familia.nombre);
+      const direccionCifrada = await cryptoService.encrypt(familia.direccion);
+
+      let notasCifradas = null;
+      if (familia.notas) {
+        notasCifradas = await cryptoService.encrypt(familia.notas);
+      }
+
+      const params = [
+        coloniasIds[familia.colonia],
+        nombreCifrado.encrypted, nombreCifrado.iv, nombreCifrado.authTag,
+        direccionCifrada.encrypted, direccionCifrada.iv, direccionCifrada.authTag,
+        adminId
+      ];
+
+      let query = `INSERT INTO familias (
+        id_colonia,
+        nombre_familia_encrypted, nombre_familia_iv, nombre_familia_tag,
+        direccion_encrypted, direccion_iv, direccion_tag,
+        id_registro`;
+
+      if (notasCifradas) {
+        query += `, notas_encrypted, notas_iv, notas_tag`;
+        params.push(notasCifradas.encrypted, notasCifradas.iv, notasCifradas.authTag);
+      }
+
+      query += `) VALUES (?, ?, ?, ?, ?, ?, ?, ?`;
+      if (notasCifradas) {
+        query += `, ?, ?, ?`;
+      }
+      query += `)`;
+
+      const [result] = await writePool.query(query, params);
+
+      familiasIds[familia.nombre] = result.insertId;
+      console.log(`  ✅ Familia: ${familia.nombre} (ID: ${result.insertId})`);
+    }
+
+    // ==================== 6. PERSONAS ====================
+    console.log('\n👥 Creating personas...');
+
+    const personas = [
+      // Familia López García
+      { nombre: 'Juan Carlos López García', curp: 'LOGJ800315HDFPRL01', telefono: '5555-1234', edad: '45', genero: 'M', fechaNac: '1980-03-15', rol: 'JEFE_FAMILIA', familia: 'López García', notas: 'Jefe de familia, comerciante' },
+      { nombre: 'María Guadalupe García Pérez', curp: 'GAPM820420MDFRRR08', telefono: '5555-1234', edad: '42', genero: 'F', fechaNac: '1982-04-20', rol: 'ESPOSA', familia: 'López García', notas: null },
+      { nombre: 'Carlos Alberto López García', curp: 'LOGC040815HDFPRL09', telefono: '5555-5678', edad: '20', genero: 'M', fechaNac: '2004-08-15', rol: 'HIJO', familia: 'López García', notas: 'Estudiante universitario' },
+      { nombre: 'Ana Sofía López García', curp: 'LOGA071210MDFPRL02', telefono: null, edad: '17', genero: 'F', fechaNac: '2007-12-10', rol: 'HIJA', familia: 'López García', notas: null },
+
+      // Familia Martínez Hernández
+      { nombre: 'Roberto Martínez Hernández', curp: 'MAHR860522HDFRRB05', telefono: '5555-9876', edad: '38', genero: 'M', fechaNac: '1986-05-22', rol: 'JEFE_FAMILIA', familia: 'Martínez Hernández', notas: null },
+      { nombre: 'Laura Hernández Díaz', curp: 'HEDL890715MDFRZR03', telefono: '5555-9876', edad: '35', genero: 'F', fechaNac: '1989-07-15', rol: 'ESPOSA', familia: 'Martínez Hernández', notas: 'Maestra de primaria' },
+      { nombre: 'Diego Martínez Hernández', curp: 'MAHD120320HDFRG06', telefono: null, edad: '12', genero: 'M', fechaNac: '2012-03-20', rol: 'HIJO', familia: 'Martínez Hernández', notas: null },
+
+      // Familia González Pérez
+      { nombre: 'Patricia González Pérez', curp: 'GOPP720815MDFNRT04', telefono: '5555-4567', edad: '52', genero: 'F', fechaNac: '1972-08-15', rol: 'JEFE_FAMILIA', familia: 'González Pérez', notas: 'Madre soltera, empleada de gobierno' },
+      { nombre: 'Sofía González Ramírez', curp: 'GORS991120MDFNMF07', telefono: '5555-4568', edad: '25', genero: 'F', fechaNac: '1999-11-20', rol: 'HIJA', familia: 'González Pérez', notas: null },
+
+      // Familia Rodríguez Sánchez
+      { nombre: 'Miguel Ángel Rodríguez Sánchez', curp: 'ROSM830910HDFDSN01', telefono: '5555-7890', edad: '41', genero: 'M', fechaNac: '1983-09-10', rol: 'JEFE_FAMILIA', familia: 'Rodríguez Sánchez', notas: null },
+      { nombre: 'Elena Sánchez López', curp: 'SALE850225MDFSPL08', telefono: '5555-7890', edad: '39', genero: 'F', fechaNac: '1985-02-25', rol: 'ESPOSA', familia: 'Rodríguez Sánchez', notas: null },
+      { nombre: 'Luis Miguel Rodríguez Sánchez', curp: 'ROSL090505HDFSLS03', telefono: null, edad: '15', genero: 'M', fechaNac: '2009-05-05', rol: 'HIJO', familia: 'Rodríguez Sánchez', notas: 'Estudiante de secundaria' },
+
+      // Familia Ramírez Torres
+      { nombre: 'José Ramírez Torres', curp: 'RATJ690618HDFMRS02', telefono: '5555-2345', edad: '55', genero: 'M', fechaNac: '1969-06-18', rol: 'JEFE_FAMILIA', familia: 'Ramírez Torres', notas: 'Jubilado, activista social' },
+      { nombre: 'Carmen Torres Vega', curp: 'TOVC710822MDFRR09', telefono: '5555-2345', edad: '53', genero: 'F', fechaNac: '1971-08-22', rol: 'ESPOSA', familia: 'Ramírez Torres', notas: null },
+
+      // Familia Flores Morales
+      { nombre: 'Andrea Flores Morales', curp: 'FOMA950415MDFLRD04', telefono: '5555-6789', edad: '29', genero: 'F', fechaNac: '1995-04-15', rol: 'JEFE_FAMILIA', familia: 'Flores Morales', notas: 'Madre soltera, diseñadora gráfica' },
+
+      // Familia Castro Ruiz
+      { nombre: 'Fernando Castro Ruiz', curp: 'CARF760930HDFSTS07', telefono: '5555-3456', edad: '48', genero: 'M', fechaNac: '1976-09-30', rol: 'JEFE_FAMILIA', familia: 'Castro Ruiz', notas: null },
+      { nombre: 'Gabriela Ruiz Mendoza', curp: 'RUMG790312MDFZNB05', telefono: '5555-3456', edad: '45', genero: 'F', fechaNac: '1979-03-12', rol: 'ESPOSA', familia: 'Castro Ruiz', notas: null },
+
+      // Familia Mendoza Silva
+      { nombre: 'Alberto Mendoza Silva', curp: 'MESA910725HDFNLL06', telefono: '5555-8901', edad: '33', genero: 'M', fechaNac: '1991-07-25', rol: 'JEFE_FAMILIA', familia: 'Mendoza Silva', notas: 'Ingeniero de software' },
+      { nombre: 'Mónica Silva Cortés', curp: 'SICM930515MDFLRT01', telefono: '5555-8901', edad: '31', genero: 'F', fechaNac: '1993-05-15', rol: 'ESPOSA', familia: 'Mendoza Silva', notas: null }
+    ];
+
+    let personasCount = 0;
+    let votantesCount = 0;
+
+    for (const persona of personas) {
+      const nombreCifrado = await cryptoService.encrypt(persona.nombre);
+      const curpCifrada = await cryptoService.encrypt(persona.curp);
+      const edadCifrada = await cryptoService.encrypt(persona.edad);
+      const generoCifrado = await cryptoService.encrypt(persona.genero);
+      const rolCifrado = await cryptoService.encrypt(persona.rol);
+
+      let telefonoCifrado = null;
+      if (persona.telefono) {
+        telefonoCifrado = await cryptoService.encrypt(persona.telefono);
+      }
+
+      let notasCifradas = null;
+      if (persona.notas) {
+        notasCifradas = await cryptoService.encrypt(persona.notas);
+      }
+
+      // Calcular si puede votar
+      const edad = parseInt(persona.edad);
+      const puedeVotar = edad >= 18 ? 1 : 0;
+      if (puedeVotar) votantesCount++;
+
+      const params = [
+        familiasIds[persona.familia],
+        nombreCifrado.encrypted, nombreCifrado.iv, nombreCifrado.authTag,
+        curpCifrada.encrypted, curpCifrada.iv, curpCifrada.authTag,
+        edadCifrada.encrypted, edadCifrada.iv, edadCifrada.authTag,
+        generoCifrado.encrypted, generoCifrado.iv, generoCifrado.authTag,
+        persona.fechaNac,
+        rolCifrado.encrypted, rolCifrado.iv, rolCifrado.authTag,
+        puedeVotar,
+        adminId
+      ];
+
+      let query = `INSERT INTO personas (
+        id_familia,
+        nombre_encrypted, nombre_iv, nombre_tag,
+        curp_encrypted, curp_iv, curp_tag,
+        edad_encrypted, edad_iv, edad_tag,
+        genero_encrypted, genero_iv, genero_tag,
+        fecha_nacimiento,
+        rol_familia_encrypted, rol_familia_iv, rol_familia_tag,
+        puede_votar,
+        id_registro`;
+
+      if (telefonoCifrado) {
+        query += `, telefono_encrypted, telefono_iv, telefono_tag`;
+        params.push(telefonoCifrado.encrypted, telefonoCifrado.iv, telefonoCifrado.authTag);
+      }
+
+      if (notasCifradas) {
+        query += `, notas_encrypted, notas_iv, notas_tag`;
+        params.push(notasCifradas.encrypted, notasCifradas.iv, notasCifradas.authTag);
+      }
+
+      query += `) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`;
+
+      if (telefonoCifrado) {
+        query += `, ?, ?, ?`;
+      }
+
+      if (notasCifradas) {
+        query += `, ?, ?, ?`;
+      }
+
+      query += `)`;
+
+      await writePool.query(query, params);
+      personasCount++;
+    }
+
+    console.log(`  ✅ ${personasCount} personas creadas (${votantesCount} pueden votar)`);
+
+    // ==================== RESUMEN ====================
+    console.log('\n' + '='.repeat(50));
+    console.log('✅ SEEDING COMPLETADO EXITOSAMENTE\n');
+    console.log('📊 Resumen:');
+    console.log(`   - 1 usuario administrador`);
+    console.log(`   - ${estados.length} estados`);
+    console.log(`   - ${delegaciones.length} delegaciones`);
+    console.log(`   - ${colonias.length} colonias`);
+    console.log(`   - ${familias.length} familias`);
+    console.log(`   - ${personasCount} personas`);
+    console.log(`   - ${votantesCount} personas pueden votar (≥18 años)`);
+    console.log('\n🔐 Todos los campos sensibles cifrados con 5 capas');
+    console.log('🎯 Sistema listo para usar\n');
+    console.log('='.repeat(50));
+
+  } catch (error) {
+    console.error('\n❌ Error during seeding:', error.message);
+    console.error(error.stack);
+    process.exit(1);
+  } finally {
+    await writePool.end();
+  }
+}
+
+seedDatabase();

@@ -53,16 +53,17 @@ const fetchWithAuth = async (endpoint, options = {}) => {
         if (!response.ok) {
             return {
                 success: false,
-                error: data.message || data.error || 'Error en la petición',
+                error: data.message || 'Error en la petición',
                 status: response.status
             }
         }
 
-        // El backend siempre retorna { success: true, data: {...} }
-        // Retornamos el objeto completo
-        return data
+        return {
+            success: true,
+            data: data.data || data
+        }
     } catch (error) {
-        console.error('Electoral API Error:', error)
+        console.error('Error en fetch:', error)
         return {
             success: false,
             error: 'Error de conexión con el servidor'

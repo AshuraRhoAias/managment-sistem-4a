@@ -9,7 +9,6 @@ const { getAllCacheStats } = require('./config/cache');
 const securityMiddleware = require('./middleware/security.middleware');
 const advancedSecurity = require('./middleware/advanced-security.middleware');
 const authRoutes = require('./routes/auth.routes');
-const electoralRoutes = require('./routes/electoral.routes');
 
 /**
  * ============================================
@@ -123,7 +122,6 @@ if (NODE_ENV === 'development') {
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/electoral', electoralRoutes);
 
 // Ruta 404
 app.use('*', (req, res) => {
@@ -241,4 +239,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-

@@ -9,11 +9,33 @@ const apiClient = {
     async request(endpoint, options = {}) {
         const token = CookieManager.get('auth_token')
 
+        // Obtener ubicación del usuario desde sessionStorage
+        const locationData = typeof window !== 'undefined'
+            ? sessionStorage.getItem('userLocation')
+            : null;
+
+        let locationHeaders = {};
+        if (locationData) {
+            try {
+                const location = JSON.parse(locationData);
+                if (location.latitude && location.longitude) {
+                    locationHeaders = {
+                        'X-Browser-Latitude': location.latitude.toString(),
+                        'X-Browser-Longitude': location.longitude.toString(),
+                        'X-Location-Accuracy': location.accuracy ? location.accuracy.toString() : '0'
+                    };
+                }
+            } catch (err) {
+                console.error('Error parsing location data:', err);
+            }
+        }
+
         const config = {
             ...options,
             headers: {
                 'Content-Type': 'application/json',
                 ...(token && { 'Authorization': `Bearer ${token}` }),
+                ...locationHeaders,
                 ...options.headers,
             },
         }
@@ -23,12 +45,18 @@ const apiClient = {
             const data = await response.json()
 
             if (!response.ok) {
-                throw new Error(data.error || 'Error en la petición')
+                return {
+                    success: false,
+                    error: data.message || data.error || 'Error en la petición'
+                }
             }
 
-            return { success: true, data }
+            // El backend retorna { success: true, data: {...} }
+            // Retornamos el objeto completo tal como viene
+            return data
         } catch (error) {
-            return { success: false, error: error.message }
+            console.error('API Client Error:', error)
+            return { success: false, error: error.message || 'Error de conexión' }
         }
     },
 
