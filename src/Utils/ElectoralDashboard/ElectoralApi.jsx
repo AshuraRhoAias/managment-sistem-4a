@@ -1,0 +1,429 @@
+import CookieManager from '@/Utils/Login/CookieManager'
+
+// ============================================
+// 🌐 CONFIGURACIÓN BASE
+// ============================================
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api'
+
+// ============================================
+// 🔧 HELPER: Fetch con autenticación
+// ============================================
+const fetchWithAuth = async (endpoint, options = {}) => {
+    const token = CookieManager.get('auth_token')
+
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+    }
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...options,
+            headers,
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+            return {
+                success: false,
+                error: data.message || 'Error en la petición',
+                status: response.status
+            }
+        }
+
+        return {
+            success: true,
+            data: data.data || data
+        }
+    } catch (error) {
+        console.error('Error en fetch:', error)
+        return {
+            success: false,
+            error: 'Error de conexión con el servidor'
+        }
+    }
+}
+
+// ============================================
+// 📊 ELECTORAL API CLIENT
+// ============================================
+const ElectoralApi = {
+
+    // ==================== DASHBOARD GENERAL ====================
+
+    /**
+     * Obtiene las estadísticas generales del dashboard
+     * GET /electoral/stats
+     */
+    getGeneralStats: async () => {
+        return await fetchWithAuth('/electoral/stats', {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene el resumen mensual (gráfica)
+     * GET /electoral/monthly-summary
+     */
+    getMonthlySummary: async () => {
+        return await fetchWithAuth('/electoral/monthly-summary', {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene la actividad reciente
+     * GET /electoral/recent-activity
+     */
+    getRecentActivity: async () => {
+        return await fetchWithAuth('/electoral/recent-activity', {
+            method: 'GET'
+        })
+    },
+
+    // ==================== ESTADOS ====================
+
+    /**
+     * Obtiene todos los estados
+     * GET /electoral/states
+     */
+    getAllStates: async () => {
+        return await fetchWithAuth('/electoral/states', {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene un estado específico con sus delegaciones
+     * GET /electoral/states/:stateId
+     */
+    getStateById: async (stateId) => {
+        return await fetchWithAuth(`/electoral/states/${stateId}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Crea un nuevo estado
+     * POST /electoral/states
+     */
+    createState: async (stateData) => {
+        return await fetchWithAuth('/electoral/states', {
+            method: 'POST',
+            body: JSON.stringify(stateData)
+        })
+    },
+
+    /**
+     * Actualiza un estado
+     * PUT /electoral/states/:stateId
+     */
+    updateState: async (stateId, stateData) => {
+        return await fetchWithAuth(`/electoral/states/${stateId}`, {
+            method: 'PUT',
+            body: JSON.stringify(stateData)
+        })
+    },
+
+    /**
+     * Elimina un estado
+     * DELETE /electoral/states/:stateId
+     */
+    deleteState: async (stateId) => {
+        return await fetchWithAuth(`/electoral/states/${stateId}`, {
+            method: 'DELETE'
+        })
+    },
+
+    // ==================== DELEGACIONES ====================
+
+    /**
+     * Obtiene todas las delegaciones de un estado
+     * GET /electoral/states/:stateId/delegations
+     */
+    getDelegationsByState: async (stateId) => {
+        return await fetchWithAuth(`/electoral/states/${stateId}/delegations`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene una delegación específica
+     * GET /electoral/delegations/:delegationId
+     */
+    getDelegationById: async (delegationId) => {
+        return await fetchWithAuth(`/electoral/delegations/${delegationId}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Crea una nueva delegación
+     * POST /electoral/delegations
+     */
+    createDelegation: async (delegationData) => {
+        return await fetchWithAuth('/electoral/delegations', {
+            method: 'POST',
+            body: JSON.stringify(delegationData)
+        })
+    },
+
+    /**
+     * Actualiza una delegación
+     * PUT /electoral/delegations/:delegationId
+     */
+    updateDelegation: async (delegationId, delegationData) => {
+        return await fetchWithAuth(`/electoral/delegations/${delegationId}`, {
+            method: 'PUT',
+            body: JSON.stringify(delegationData)
+        })
+    },
+
+    /**
+     * Elimina una delegación
+     * DELETE /electoral/delegations/:delegationId
+     */
+    deleteDelegation: async (delegationId) => {
+        return await fetchWithAuth(`/electoral/delegations/${delegationId}`, {
+            method: 'DELETE'
+        })
+    },
+
+    // ==================== COLONIAS ====================
+
+    /**
+     * Obtiene todas las colonias de una delegación
+     * GET /electoral/delegations/:delegationId/colonies
+     */
+    getColoniesByDelegation: async (delegationId) => {
+        return await fetchWithAuth(`/electoral/delegations/${delegationId}/colonies`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Crea una nueva colonia
+     * POST /electoral/colonies
+     */
+    createColony: async (colonyData) => {
+        return await fetchWithAuth('/electoral/colonies', {
+            method: 'POST',
+            body: JSON.stringify(colonyData)
+        })
+    },
+
+    /**
+     * Actualiza una colonia
+     * PUT /electoral/colonies/:colonyId
+     */
+    updateColony: async (colonyId, colonyData) => {
+        return await fetchWithAuth(`/electoral/colonies/${colonyId}`, {
+            method: 'PUT',
+            body: JSON.stringify(colonyData)
+        })
+    },
+
+    /**
+     * Elimina una colonia
+     * DELETE /electoral/colonies/:colonyId
+     */
+    deleteColony: async (colonyId) => {
+        return await fetchWithAuth(`/electoral/colonies/${colonyId}`, {
+            method: 'DELETE'
+        })
+    },
+
+    // ==================== FAMILIAS ====================
+
+    /**
+     * Obtiene todas las familias
+     * GET /electoral/families
+     */
+    getAllFamilies: async (filters = {}) => {
+        const queryParams = new URLSearchParams(filters).toString()
+        return await fetchWithAuth(`/electoral/families${queryParams ? '?' + queryParams : ''}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene una familia específica
+     * GET /electoral/families/:familyId
+     */
+    getFamilyById: async (familyId) => {
+        return await fetchWithAuth(`/electoral/families/${familyId}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Crea una nueva familia
+     * POST /electoral/families
+     */
+    createFamily: async (familyData) => {
+        return await fetchWithAuth('/electoral/families', {
+            method: 'POST',
+            body: JSON.stringify(familyData)
+        })
+    },
+
+    /**
+     * Actualiza una familia
+     * PUT /electoral/families/:familyId
+     */
+    updateFamily: async (familyId, familyData) => {
+        return await fetchWithAuth(`/electoral/families/${familyId}`, {
+            method: 'PUT',
+            body: JSON.stringify(familyData)
+        })
+    },
+
+    /**
+     * Elimina una familia
+     * DELETE /electoral/families/:familyId
+     */
+    deleteFamily: async (familyId) => {
+        return await fetchWithAuth(`/electoral/families/${familyId}`, {
+            method: 'DELETE'
+        })
+    },
+
+    // ==================== PERSONAS ====================
+
+    /**
+     * Obtiene todas las personas
+     * GET /electoral/persons
+     */
+    getAllPersons: async (filters = {}) => {
+        const queryParams = new URLSearchParams(filters).toString()
+        return await fetchWithAuth(`/electoral/persons${queryParams ? '?' + queryParams : ''}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene una persona específica
+     * GET /electoral/persons/:personId
+     */
+    getPersonById: async (personId) => {
+        return await fetchWithAuth(`/electoral/persons/${personId}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Crea una nueva persona
+     * POST /electoral/persons
+     */
+    createPerson: async (personData) => {
+        return await fetchWithAuth('/electoral/persons', {
+            method: 'POST',
+            body: JSON.stringify(personData)
+        })
+    },
+
+    /**
+     * Actualiza una persona
+     * PUT /electoral/persons/:personId
+     */
+    updatePerson: async (personId, personData) => {
+        return await fetchWithAuth(`/electoral/persons/${personId}`, {
+            method: 'PUT',
+            body: JSON.stringify(personData)
+        })
+    },
+
+    /**
+     * Elimina una persona
+     * DELETE /electoral/persons/:personId
+     */
+    deletePerson: async (personId) => {
+        return await fetchWithAuth(`/electoral/persons/${personId}`, {
+            method: 'DELETE'
+        })
+    },
+
+    // ==================== BÚSQUEDA ====================
+
+    /**
+     * Búsqueda general (CURP, nombre, teléfono, dirección)
+     * GET /electoral/search?q=termino
+     */
+    search: async (searchTerm) => {
+        return await fetchWithAuth(`/electoral/search?q=${encodeURIComponent(searchTerm)}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Búsqueda por CURP
+     * GET /electoral/search/curp/:curp
+     */
+    searchByCurp: async (curp) => {
+        return await fetchWithAuth(`/electoral/search/curp/${curp}`, {
+            method: 'GET'
+        })
+    },
+
+    // ==================== REPORTES ====================
+
+    /**
+     * Genera reporte de un estado
+     * GET /electoral/reports/state/:stateId
+     */
+    generateStateReport: async (stateId) => {
+        return await fetchWithAuth(`/electoral/reports/state/${stateId}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Genera reporte de una delegación
+     * GET /electoral/reports/delegation/:delegationId
+     */
+    generateDelegationReport: async (delegationId) => {
+        return await fetchWithAuth(`/electoral/reports/delegation/${delegationId}`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Exporta datos a CSV
+     * GET /electoral/export/csv
+     */
+    exportToCSV: async (type, id) => {
+        return await fetchWithAuth(`/electoral/export/csv?type=${type}&id=${id}`, {
+            method: 'GET'
+        })
+    },
+
+    // ==================== ESTADÍSTICAS AVANZADAS ====================
+
+    /**
+     * Obtiene estadísticas de cobertura por zona
+     * GET /electoral/analytics/coverage
+     */
+    getCoverageAnalytics: async () => {
+        return await fetchWithAuth('/electoral/analytics/coverage', {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene tendencias de crecimiento
+     * GET /electoral/analytics/trends
+     */
+    getGrowthTrends: async (period = 'monthly') => {
+        return await fetchWithAuth(`/electoral/analytics/trends?period=${period}`, {
+            method: 'GET'
+        })
+    },
+
+}
+
+export default ElectoralApi
