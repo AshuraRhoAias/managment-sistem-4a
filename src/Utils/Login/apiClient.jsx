@@ -57,76 +57,76 @@ const apiClient = {
         }
     },
 
-    // ✅ RUTAS CORREGIDAS CON 
+    // ✅ RUTAS CORREGIDAS CON
     async login(email, password) {
-        return this.request('/auth/login', {
+        return this.request('/api/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password })
         })
     },
 
-    async register(nombre, email, password, rol) {
-        return this.request('/auth/register', {
+    async register(nombre, email, password, secretPhrase, rol) {
+        return this.request('/api/auth/register', {
             method: 'POST',
-            body: JSON.stringify({ nombre, email, password, rol })
+            body: JSON.stringify({ nombre, email, password, secretPhrase, rol })
         })
     },
 
     async logout() {
-        return this.request('/auth/logout', {
+        return this.request('/api/auth/logout', {
             method: 'POST'
         })
     },
 
     async refreshToken(refreshToken) {
-        return this.request('/auth/refresh', {
+        return this.request('/api/auth/refresh', {
             method: 'POST',
             body: JSON.stringify({ refreshToken })
         })
     },
 
     async getCurrentUser() {
-        return this.request('/auth/me', {
+        return this.request('/api/auth/me', {
             method: 'GET'
         })
     },
 
     async changePassword(oldPassword, newPassword) {
-        return this.request('/auth/change-password', {
+        return this.request('/api/auth/change-password', {
             method: 'PUT',
             body: JSON.stringify({ oldPassword, newPassword })
         })
     },
 
     async getSessions() {
-        return this.request('/auth/sessions', {
+        return this.request('/api/auth/sessions', {
             method: 'GET'
         })
     },
 
     // APIs Electorales
     async getStats() {
-        return this.request('/electoral/stats', {
+        return this.request('/api/electoral/stats', {
             method: 'GET'
         })
     },
 
     async getStates() {
-        return this.request('/electoral/states', {
+        return this.request('/api/electoral/states', {
             method: 'GET'
         })
     },
 
     async getFamilies(filters = {}) {
         const query = new URLSearchParams(filters).toString()
-        return this.request(`/electoral/families${query ? '?' + query : ''}`, {
+        return this.request(`/api/electoral/families${query ? '?' + query : ''}`, {
             method: 'GET'
         })
     },
 
     async getPersons(filters = {}) {
         const query = new URLSearchParams(filters).toString()
-        return this.request(`/electoral/persons${query ? '?' + query : ''}`, {
+        return this.request(`/api/electoral/persons${query ? '?' + query : ''}`, {
             method: 'GET'
         })
     }
