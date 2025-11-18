@@ -500,13 +500,22 @@ app.get('/health', (req, res) => {
 // POST /api/auth/register - Registro de usuario
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
-    const { nombre, email, password, rol = 'CAPTURISTA' } = req.body;
+    const { nombre, email, password, rol = 'CAPTURISTA', secretPhrase } = req.body;
 
-    if (!nombre || !email || !password) {
+    if (!nombre || !email || !password || !secretPhrase) {
       return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         error: CONSTANTS.ERRORS.BAD_REQUEST,
-        message: 'Todos los campos son obligatorios',
+        message: 'Todos los campos son obligatorios incluyendo la frase secreta',
+      });
+    }
+
+    // Validar frase secreta
+    if (secretPhrase !== 'AshuraRhoAiasTekkenKaioh') {
+      return res.status(CONSTANTS.HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        error: CONSTANTS.ERRORS.FORBIDDEN,
+        message: 'Frase secreta incorrecta. No es posible crear el registro.',
       });
     }
 
@@ -954,6 +963,92 @@ app.post(
   }
 );
 
+// PUT /api/electoral/states/:id - Actualizar estado
+app.put(
+  '/api/electoral/states/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nombre, codigo } = req.body;
+
+      if (!nombre && !codigo) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Debe proporcionar al menos un campo para actualizar',
+        });
+      }
+
+      const updates = [];
+      const params = [];
+
+      if (nombre) {
+        const encryptedNombre = cryptoService.encrypt(nombre);
+        updates.push('nombre_encrypted = ?, nombre_iv = ?, nombre_tag = ?');
+        params.push(encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag);
+      }
+
+      if (codigo) {
+        updates.push('codigo = ?');
+        params.push(codigo);
+      }
+
+      params.push(id);
+
+      await writePool.query(
+        `UPDATE estados SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+
+      mainCache.del('states:all');
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.UPDATED,
+      });
+    } catch (error) {
+      console.error('Error al actualizar estado:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al actualizar estado',
+      });
+    }
+  }
+);
+
+// DELETE /api/electoral/states/:id - Eliminar estado
+app.delete(
+  '/api/electoral/states/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await writePool.query('UPDATE estados SET activo = 0 WHERE id = ?', [id]);
+
+      mainCache.del('states:all');
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.DELETED,
+      });
+    } catch (error) {
+      console.error('Error al eliminar estado:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al eliminar estado',
+      });
+    }
+  }
+);
+
 // GET /api/electoral/delegations - Obtener todas las delegaciones
 app.get('/api/electoral/delegations', verifyToken, apiLimiter, async (req, res) => {
   try {
@@ -984,6 +1079,170 @@ app.get('/api/electoral/delegations', verifyToken, apiLimiter, async (req, res) 
   }
 });
 
+// POST /api/electoral/delegations - Crear nueva delegación
+app.post(
+  '/api/electoral/delegations',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR]),
+  async (req, res) => {
+    try {
+      const { nombre, estado_id } = req.body;
+
+      if (!nombre || !estado_id) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Nombre y estado_id son requeridos',
+        });
+      }
+
+      const encryptedNombre = cryptoService.encrypt(nombre);
+
+      const [result] = await writePool.query(
+        `INSERT INTO delegaciones (
+          nombre_encrypted, nombre_iv, nombre_tag, estado_id, activo, created_at
+        ) VALUES (?, ?, ?, ?, 1, NOW())`,
+        [encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag, estado_id]
+      );
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.CREATED).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.CREATED,
+        data: { id: result.insertId, nombre, estado_id },
+      });
+    } catch (error) {
+      console.error('Error al crear delegación:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al crear delegación',
+      });
+    }
+  }
+);
+
+// PUT /api/electoral/delegations/:id - Actualizar delegación
+app.put(
+  '/api/electoral/delegations/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nombre, estado_id } = req.body;
+
+      if (!nombre && !estado_id) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Debe proporcionar al menos un campo para actualizar',
+        });
+      }
+
+      const updates = [];
+      const params = [];
+
+      if (nombre) {
+        const encryptedNombre = cryptoService.encrypt(nombre);
+        updates.push('nombre_encrypted = ?, nombre_iv = ?, nombre_tag = ?');
+        params.push(encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag);
+      }
+
+      if (estado_id) {
+        updates.push('estado_id = ?');
+        params.push(estado_id);
+      }
+
+      params.push(id);
+
+      await writePool.query(
+        `UPDATE delegaciones SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.UPDATED,
+      });
+    } catch (error) {
+      console.error('Error al actualizar delegación:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al actualizar delegación',
+      });
+    }
+  }
+);
+
+// DELETE /api/electoral/delegations/:id - Eliminar delegación
+app.delete(
+  '/api/electoral/delegations/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await writePool.query('UPDATE delegaciones SET activo = 0 WHERE id = ?', [id]);
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.DELETED,
+      });
+    } catch (error) {
+      console.error('Error al eliminar delegación:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al eliminar delegación',
+      });
+    }
+  }
+);
+
+// GET /api/electoral/states/:stateId/delegations - Obtener delegaciones por estado
+app.get('/api/electoral/states/:stateId/delegations', verifyToken, apiLimiter, async (req, res) => {
+  try {
+    const { stateId } = req.params;
+
+    const [rows] = await readPool.query(
+      'SELECT * FROM delegaciones WHERE estado_id = ? ORDER BY nombre_encrypted',
+      [stateId]
+    );
+
+    const delegaciones = rows.map((del) => ({
+      id: del.id,
+      nombre: cryptoService.decrypt({
+        encrypted: del.nombre_encrypted,
+        iv: del.nombre_iv,
+        authTag: del.nombre_tag,
+      }),
+      estado_id: del.estado_id,
+      activo: del.activo,
+      created_at: del.created_at,
+    }));
+
+    res.json({ success: true, data: delegaciones });
+  } catch (error) {
+    console.error('Error al obtener delegaciones por estado:', error);
+    res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+      success: false,
+      error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+      message: 'Error al obtener delegaciones',
+    });
+  }
+});
+
 // GET /api/electoral/colonies - Obtener todas las colonias
 app.get('/api/electoral/colonies', verifyToken, apiLimiter, async (req, res) => {
   try {
@@ -1005,6 +1264,176 @@ app.get('/api/electoral/colonies', verifyToken, apiLimiter, async (req, res) => 
     res.json({ success: true, data: colonias });
   } catch (error) {
     console.error('Error al obtener colonias:', error);
+    res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+      success: false,
+      error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+      message: 'Error al obtener colonias',
+    });
+  }
+});
+
+// POST /api/electoral/colonies - Crear nueva colonia
+app.post(
+  '/api/electoral/colonies',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR]),
+  async (req, res) => {
+    try {
+      const { nombre, delegacion_id, codigo_postal } = req.body;
+
+      if (!nombre || !delegacion_id) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Nombre y delegacion_id son requeridos',
+        });
+      }
+
+      const encryptedNombre = cryptoService.encrypt(nombre);
+
+      const [result] = await writePool.query(
+        `INSERT INTO colonias (
+          nombre_encrypted, nombre_iv, nombre_tag, delegacion_id, codigo_postal, activo, created_at
+        ) VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+        [encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag, delegacion_id, codigo_postal || null]
+      );
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.CREATED).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.CREATED,
+        data: { id: result.insertId, nombre, delegacion_id, codigo_postal },
+      });
+    } catch (error) {
+      console.error('Error al crear colonia:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al crear colonia',
+      });
+    }
+  }
+);
+
+// PUT /api/electoral/colonies/:id - Actualizar colonia
+app.put(
+  '/api/electoral/colonies/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nombre, delegacion_id, codigo_postal } = req.body;
+
+      if (!nombre && !delegacion_id && !codigo_postal) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Debe proporcionar al menos un campo para actualizar',
+        });
+      }
+
+      const updates = [];
+      const params = [];
+
+      if (nombre) {
+        const encryptedNombre = cryptoService.encrypt(nombre);
+        updates.push('nombre_encrypted = ?, nombre_iv = ?, nombre_tag = ?');
+        params.push(encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag);
+      }
+
+      if (delegacion_id) {
+        updates.push('delegacion_id = ?');
+        params.push(delegacion_id);
+      }
+
+      if (codigo_postal !== undefined) {
+        updates.push('codigo_postal = ?');
+        params.push(codigo_postal);
+      }
+
+      params.push(id);
+
+      await writePool.query(
+        `UPDATE colonias SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.UPDATED,
+      });
+    } catch (error) {
+      console.error('Error al actualizar colonia:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al actualizar colonia',
+      });
+    }
+  }
+);
+
+// DELETE /api/electoral/colonies/:id - Eliminar colonia
+app.delete(
+  '/api/electoral/colonies/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await writePool.query('UPDATE colonias SET activo = 0 WHERE id = ?', [id]);
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.DELETED,
+      });
+    } catch (error) {
+      console.error('Error al eliminar colonia:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al eliminar colonia',
+      });
+    }
+  }
+);
+
+// GET /api/electoral/delegations/:delegationId/colonies - Obtener colonias por delegación
+app.get('/api/electoral/delegations/:delegationId/colonies', verifyToken, apiLimiter, async (req, res) => {
+  try {
+    const { delegationId } = req.params;
+
+    const [rows] = await readPool.query(
+      'SELECT * FROM colonias WHERE delegacion_id = ? ORDER BY nombre_encrypted',
+      [delegationId]
+    );
+
+    const colonias = rows.map((col) => ({
+      id: col.id,
+      nombre: cryptoService.decrypt({
+        encrypted: col.nombre_encrypted,
+        iv: col.nombre_iv,
+        authTag: col.nombre_tag,
+      }),
+      delegacion_id: col.delegacion_id,
+      codigo_postal: col.codigo_postal,
+      activo: col.activo,
+      created_at: col.created_at,
+    }));
+
+    res.json({ success: true, data: colonias });
+  } catch (error) {
+    console.error('Error al obtener colonias por delegación:', error);
     res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
       success: false,
       error: CONSTANTS.ERRORS.INTERNAL_SERVER,
@@ -1143,6 +1572,199 @@ app.get('/api/electoral/families/:id', verifyToken, apiLimiter, async (req, res)
   }
 });
 
+// POST /api/electoral/families - Crear nueva familia
+app.post(
+  '/api/electoral/families',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR, CONSTANTS.ROLES.CAPTURISTA]),
+  async (req, res) => {
+    try {
+      const { colonia_id, direccion, numero_exterior, numero_interior, referencia, telefono, estado_familia } = req.body;
+
+      if (!colonia_id || !direccion) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Colonia ID y dirección son requeridos',
+        });
+      }
+
+      const encryptedDireccion = cryptoService.encrypt(direccion);
+      let encryptedReferencia = null;
+
+      if (referencia) {
+        encryptedReferencia = cryptoService.encrypt(referencia);
+      }
+
+      const query = encryptedReferencia
+        ? `INSERT INTO familias (
+            colonia_id, direccion_encrypted, direccion_iv, direccion_tag,
+            numero_exterior, numero_interior,
+            referencia_encrypted, referencia_iv, referencia_tag,
+            telefono, estado_familia, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+        : `INSERT INTO familias (
+            colonia_id, direccion_encrypted, direccion_iv, direccion_tag,
+            numero_exterior, numero_interior, telefono, estado_familia, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+
+      const params = encryptedReferencia
+        ? [
+            colonia_id,
+            encryptedDireccion.encrypted,
+            encryptedDireccion.iv,
+            encryptedDireccion.authTag,
+            numero_exterior || null,
+            numero_interior || null,
+            encryptedReferencia.encrypted,
+            encryptedReferencia.iv,
+            encryptedReferencia.authTag,
+            telefono || null,
+            estado_familia || 'ACTIVA',
+          ]
+        : [
+            colonia_id,
+            encryptedDireccion.encrypted,
+            encryptedDireccion.iv,
+            encryptedDireccion.authTag,
+            numero_exterior || null,
+            numero_interior || null,
+            telefono || null,
+            estado_familia || 'ACTIVA',
+          ];
+
+      const [result] = await writePool.query(query, params);
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.CREATED).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.CREATED,
+        data: { id: result.insertId, colonia_id, direccion },
+      });
+    } catch (error) {
+      console.error('Error al crear familia:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al crear familia',
+      });
+    }
+  }
+);
+
+// PUT /api/electoral/families/:id - Actualizar familia
+app.put(
+  '/api/electoral/families/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR, CONSTANTS.ROLES.CAPTURISTA]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { direccion, numero_exterior, numero_interior, referencia, telefono, estado_familia } = req.body;
+
+      const updates = [];
+      const params = [];
+
+      if (direccion) {
+        const encryptedDireccion = cryptoService.encrypt(direccion);
+        updates.push('direccion_encrypted = ?, direccion_iv = ?, direccion_tag = ?');
+        params.push(encryptedDireccion.encrypted, encryptedDireccion.iv, encryptedDireccion.authTag);
+      }
+
+      if (numero_exterior !== undefined) {
+        updates.push('numero_exterior = ?');
+        params.push(numero_exterior);
+      }
+
+      if (numero_interior !== undefined) {
+        updates.push('numero_interior = ?');
+        params.push(numero_interior);
+      }
+
+      if (referencia !== undefined) {
+        if (referencia) {
+          const encryptedReferencia = cryptoService.encrypt(referencia);
+          updates.push('referencia_encrypted = ?, referencia_iv = ?, referencia_tag = ?');
+          params.push(encryptedReferencia.encrypted, encryptedReferencia.iv, encryptedReferencia.authTag);
+        } else {
+          updates.push('referencia_encrypted = NULL, referencia_iv = NULL, referencia_tag = NULL');
+        }
+      }
+
+      if (telefono !== undefined) {
+        updates.push('telefono = ?');
+        params.push(telefono);
+      }
+
+      if (estado_familia) {
+        updates.push('estado_familia = ?');
+        params.push(estado_familia);
+      }
+
+      if (updates.length === 0) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Debe proporcionar al menos un campo para actualizar',
+        });
+      }
+
+      params.push(id);
+
+      await writePool.query(
+        `UPDATE familias SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.UPDATED,
+      });
+    } catch (error) {
+      console.error('Error al actualizar familia:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al actualizar familia',
+      });
+    }
+  }
+);
+
+// DELETE /api/electoral/families/:id - Eliminar familia
+app.delete(
+  '/api/electoral/families/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await writePool.query('DELETE FROM familias WHERE id = ?', [id]);
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.DELETED,
+      });
+    } catch (error) {
+      console.error('Error al eliminar familia:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al eliminar familia',
+      });
+    }
+  }
+);
+
 // GET /api/electoral/persons - Obtener todas las personas
 app.get('/api/electoral/persons', verifyToken, apiLimiter, async (req, res) => {
   try {
@@ -1201,6 +1823,182 @@ app.get('/api/electoral/persons', verifyToken, apiLimiter, async (req, res) => {
     });
   }
 });
+
+// POST /api/electoral/persons - Crear nueva persona
+app.post(
+  '/api/electoral/persons',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR, CONSTANTS.ROLES.CAPTURISTA]),
+  async (req, res) => {
+    try {
+      const { familia_id, nombre, apellido_paterno, apellido_materno, edad, sexo, rol_familia } = req.body;
+
+      if (!familia_id || !nombre || !apellido_paterno || !apellido_materno || edad === undefined || !sexo) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Todos los campos obligatorios son requeridos',
+        });
+      }
+
+      const encryptedNombre = cryptoService.encrypt(nombre);
+      const encryptedApellidoPaterno = cryptoService.encrypt(apellido_paterno);
+      const encryptedApellidoMaterno = cryptoService.encrypt(apellido_materno);
+
+      const puede_votar = parseInt(edad) >= 18 ? 1 : 0;
+
+      const [result] = await writePool.query(
+        `INSERT INTO personas (
+          familia_id,
+          nombre_encrypted, nombre_iv, nombre_tag,
+          apellido_paterno_encrypted, apellido_paterno_iv, apellido_paterno_tag,
+          apellido_materno_encrypted, apellido_materno_iv, apellido_materno_tag,
+          edad, sexo, puede_votar, rol_familia, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          familia_id,
+          encryptedNombre.encrypted,
+          encryptedNombre.iv,
+          encryptedNombre.authTag,
+          encryptedApellidoPaterno.encrypted,
+          encryptedApellidoPaterno.iv,
+          encryptedApellidoPaterno.authTag,
+          encryptedApellidoMaterno.encrypted,
+          encryptedApellidoMaterno.iv,
+          encryptedApellidoMaterno.authTag,
+          edad,
+          sexo,
+          puede_votar,
+          rol_familia || null,
+        ]
+      );
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.CREATED).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.CREATED,
+        data: { id: result.insertId, nombre, apellido_paterno, apellido_materno },
+      });
+    } catch (error) {
+      console.error('Error al crear persona:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al crear persona',
+      });
+    }
+  }
+);
+
+// PUT /api/electoral/persons/:id - Actualizar persona
+app.put(
+  '/api/electoral/persons/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN, CONSTANTS.ROLES.COORDINADOR, CONSTANTS.ROLES.CAPTURISTA]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nombre, apellido_paterno, apellido_materno, edad, sexo, rol_familia } = req.body;
+
+      const updates = [];
+      const params = [];
+
+      if (nombre) {
+        const encryptedNombre = cryptoService.encrypt(nombre);
+        updates.push('nombre_encrypted = ?, nombre_iv = ?, nombre_tag = ?');
+        params.push(encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag);
+      }
+
+      if (apellido_paterno) {
+        const encryptedApellidoPaterno = cryptoService.encrypt(apellido_paterno);
+        updates.push('apellido_paterno_encrypted = ?, apellido_paterno_iv = ?, apellido_paterno_tag = ?');
+        params.push(encryptedApellidoPaterno.encrypted, encryptedApellidoPaterno.iv, encryptedApellidoPaterno.authTag);
+      }
+
+      if (apellido_materno) {
+        const encryptedApellidoMaterno = cryptoService.encrypt(apellido_materno);
+        updates.push('apellido_materno_encrypted = ?, apellido_materno_iv = ?, apellido_materno_tag = ?');
+        params.push(encryptedApellidoMaterno.encrypted, encryptedApellidoMaterno.iv, encryptedApellidoMaterno.authTag);
+      }
+
+      if (edad !== undefined) {
+        updates.push('edad = ?, puede_votar = ?');
+        params.push(edad, parseInt(edad) >= 18 ? 1 : 0);
+      }
+
+      if (sexo) {
+        updates.push('sexo = ?');
+        params.push(sexo);
+      }
+
+      if (rol_familia !== undefined) {
+        updates.push('rol_familia = ?');
+        params.push(rol_familia);
+      }
+
+      if (updates.length === 0) {
+        return res.status(CONSTANTS.HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: CONSTANTS.ERRORS.BAD_REQUEST,
+          message: 'Debe proporcionar al menos un campo para actualizar',
+        });
+      }
+
+      params.push(id);
+
+      await writePool.query(
+        `UPDATE personas SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.UPDATED,
+      });
+    } catch (error) {
+      console.error('Error al actualizar persona:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al actualizar persona',
+      });
+    }
+  }
+);
+
+// DELETE /api/electoral/persons/:id - Eliminar persona
+app.delete(
+  '/api/electoral/persons/:id',
+  verifyToken,
+  requireRole([CONSTANTS.ROLES.ADMIN]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await writePool.query('DELETE FROM personas WHERE id = ?', [id]);
+
+      mainCache.flushAll();
+      statsCache.flushAll();
+
+      res.status(CONSTANTS.HTTP_STATUS.OK).json({
+        success: true,
+        message: CONSTANTS.SUCCESS.DELETED,
+      });
+    } catch (error) {
+      console.error('Error al eliminar persona:', error);
+      res.status(CONSTANTS.HTTP_STATUS.INTERNAL_SERVER).json({
+        success: false,
+        error: CONSTANTS.ERRORS.INTERNAL_SERVER,
+        message: 'Error al eliminar persona',
+      });
+    }
+  }
+);
 
 // ==================== RUTA 404 ====================
 app.use('*', (req, res) => {
