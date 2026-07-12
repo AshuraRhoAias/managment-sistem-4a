@@ -71,28 +71,19 @@ export function AuthProvider({ children }) {
         }
     }
 
-    const register = async (nombre, email, password) => {
+    const register = async (nombre, email, password, secretPhrase) => {
         try {
-            const result = await apiClient.register(nombre, email, password)
+            const result = await apiClient.register(nombre, email, password, secretPhrase)
 
             if (!result.success) {
                 return {
                     success: false,
-                    message: result.error
+                    message: result.error || result.message
                 }
             }
 
-            const { token, refreshToken, usuario } = result.data
-
-            CookieManager.set('auth_token', token, 1)
-            CookieManager.set('refresh_token', refreshToken, 7)
-            SecureStorage.setUser(usuario)
-
-            setToken(token)
-            setUser(usuario)
-            setIsAuthenticated(true)
-
-            return { success: true }
+            // Si el registro fue exitoso, iniciar sesión automáticamente
+            return await login(email, password)
         } catch (error) {
             return {
                 success: false,

@@ -9,7 +9,6 @@ const apiClient = {
     async request(endpoint, options = {}) {
         const token = CookieManager.get('auth_token')
 
-        // Obtener ubicación del usuario desde sessionStorage
         const locationData = typeof window !== 'undefined'
             ? sessionStorage.getItem('userLocation')
             : null;
@@ -51,8 +50,6 @@ const apiClient = {
                 }
             }
 
-            // El backend retorna { success: true, data: {...} }
-            // Retornamos el objeto completo tal como viene
             return data
         } catch (error) {
             console.error('API Client Error:', error)
@@ -60,29 +57,76 @@ const apiClient = {
         }
     },
 
+    // ✅ RUTAS CORREGIDAS CON
     async login(email, password) {
-        return this.request('/auth/login', {
+        return this.request('/api/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password })
         })
     },
 
-    async register(nombre, email, password) {
-        return this.request('/auth/register', {
+    async register(nombre, email, password, secretPhrase, rol) {
+        return this.request('/api/auth/register', {
             method: 'POST',
-            body: JSON.stringify({ nombre, email, password })
+            body: JSON.stringify({ nombre, email, password, secretPhrase, rol })
         })
     },
 
-    async decryptPassword(userId, masterPhrase) {
-        return this.request('/auth/decrypt-password', {
-            method: 'POST',
-            body: JSON.stringify({ userId, masterPhrase })
+    async logout() {
+        return this.request('/api/auth/logout', {
+            method: 'POST'
         })
     },
 
-    async verifyToken() {
-        return this.request('/auth/verify', {
+    async refreshToken(refreshToken) {
+        return this.request('/api/auth/refresh', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken })
+        })
+    },
+
+    async getCurrentUser() {
+        return this.request('/api/auth/me', {
+            method: 'GET'
+        })
+    },
+
+    async changePassword(oldPassword, newPassword) {
+        return this.request('/api/auth/change-password', {
+            method: 'PUT',
+            body: JSON.stringify({ oldPassword, newPassword })
+        })
+    },
+
+    async getSessions() {
+        return this.request('/api/auth/sessions', {
+            method: 'GET'
+        })
+    },
+
+    // APIs Electorales
+    async getStats() {
+        return this.request('/api/electoral/stats', {
+            method: 'GET'
+        })
+    },
+
+    async getStates() {
+        return this.request('/api/electoral/states', {
+            method: 'GET'
+        })
+    },
+
+    async getFamilies(filters = {}) {
+        const query = new URLSearchParams(filters).toString()
+        return this.request(`/api/electoral/families${query ? '?' + query : ''}`, {
+            method: 'GET'
+        })
+    },
+
+    async getPersons(filters = {}) {
+        const query = new URLSearchParams(filters).toString()
+        return this.request(`/api/electoral/persons${query ? '?' + query : ''}`, {
             method: 'GET'
         })
     }
