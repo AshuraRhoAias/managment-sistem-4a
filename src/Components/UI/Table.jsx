@@ -11,7 +11,7 @@ import React, { useState } from 'react';
 import Button from './Button';
 
 const Table = ({
-  columns,
+  columns = [],
   data,
   onRowClick,
   actions,
@@ -25,11 +25,13 @@ const Table = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
+  const safeData = Array.isArray(data) ? data : [];
+
   // Sorting
   const sortedData = React.useMemo(() => {
-    if (!sortConfig.key) return data;
+    if (!sortConfig.key) return safeData;
 
-    return [...data].sort((a, b) => {
+    return [...safeData].sort((a, b) => {
       const aValue = a[sortConfig.key];
       const bValue = b[sortConfig.key];
 
@@ -37,7 +39,7 @@ const Table = ({
       if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [data, sortConfig]);
+  }, [safeData, sortConfig]);
 
   // Pagination
   const paginatedData = React.useMemo(() => {
@@ -64,7 +66,7 @@ const Table = ({
     );
   }
 
-  if (data.length === 0) {
+  if (safeData.length === 0) {
     return (
       <div className="text-center p-12">
         <svg

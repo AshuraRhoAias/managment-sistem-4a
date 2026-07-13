@@ -89,11 +89,11 @@ export function useDelegaciones(estadoId = null) {
   const [error, setError] = useState(null);
 
   const fetchDelegaciones = useCallback(async () => {
-    if (!estadoId) return;
-
     setLoading(true);
     setError(null);
-    const result = await ElectoralApi.getDelegationsByState(estadoId);
+    const result = estadoId
+      ? await ElectoralApi.getDelegationsByState(estadoId)
+      : await ElectoralApi.getAllDelegations();
 
     if (result.success) {
       setDelegaciones(result.data);
@@ -163,11 +163,11 @@ export function useColonias(delegacionId = null) {
   const [error, setError] = useState(null);
 
   const fetchColonias = useCallback(async () => {
-    if (!delegacionId) return;
-
     setLoading(true);
     setError(null);
-    const result = await ElectoralApi.getColoniesByDelegation(delegacionId);
+    const result = delegacionId
+      ? await ElectoralApi.getColoniesByDelegation(delegacionId)
+      : await ElectoralApi.getAllColonies();
 
     if (result.success) {
       setColonias(result.data);
