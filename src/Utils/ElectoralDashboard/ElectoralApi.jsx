@@ -174,6 +174,16 @@ const ElectoralApi = {
     },
 
     /**
+     * Obtiene todas las delegaciones (sin filtrar por estado)
+     * GET /electoral/delegations
+     */
+    getAllDelegations: async () => {
+        return await fetchWithAuth('/electoral/delegations', {
+            method: 'GET'
+        })
+    },
+
+    /**
      * Obtiene una delegación específica
      * GET /electoral/delegations/:delegationId
      */
@@ -223,6 +233,16 @@ const ElectoralApi = {
      */
     getColoniesByDelegation: async (delegationId) => {
         return await fetchWithAuth(`/electoral/delegations/${delegationId}/colonies`, {
+            method: 'GET'
+        })
+    },
+
+    /**
+     * Obtiene todas las colonias (sin filtrar por delegación)
+     * GET /electoral/colonies
+     */
+    getAllColonies: async () => {
+        return await fetchWithAuth('/electoral/colonies', {
             method: 'GET'
         })
     },

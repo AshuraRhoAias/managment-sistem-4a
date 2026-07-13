@@ -473,7 +473,7 @@ const ElectoralDashboard = () => {
             ]);
 
             if (statsResult.success) setStats(statsResult.data);
-            if (statesResult.success) setStates(statsResult.data);
+            if (statesResult.success) setStates(statesResult.data);
             if (monthlyResult.success) setMonthlyData(monthlyResult.data);
             if (activityResult.success) setActivities(activityResult.data);
 
