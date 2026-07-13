@@ -1,135 +1,106 @@
-import CookieManager from './CookieManager'
+import ElectoralApi from '../ElectoralDashboard/ElectoralApi'
 
 // ============================================
-// 🌐 API CLIENT
+// 🎭 CLIENTE DE AUTENTICACIÓN CON DATOS FALSOS
+// Sin backend real: valida contra una lista de usuarios
+// de demostración que vive en memoria.
 // ============================================
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
+const SIMULATED_DELAY_MS = 200
+const delay = (ms = SIMULATED_DELAY_MS) => new Promise((resolve) => setTimeout(resolve, ms))
+
+let nextUserId = 100
+const mockUsers = [
+    { id: 1, nombre: 'Administrador', email: 'admin@demo.com', password: 'admin123', rol: 'ADMIN' },
+]
+
+const fakeToken = (prefix) => `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now()}`
+
+const publicUser = ({ password, ...user }) => user
 
 const apiClient = {
-    async request(endpoint, options = {}) {
-        const token = CookieManager.get('auth_token')
+    async login(email, password) {
+        await delay()
 
-        const locationData = typeof window !== 'undefined'
-            ? sessionStorage.getItem('userLocation')
-            : null;
+        const user = mockUsers.find((u) => u.email.toLowerCase() === String(email).toLowerCase())
 
-        let locationHeaders = {};
-        if (locationData) {
-            try {
-                const location = JSON.parse(locationData);
-                if (location.latitude && location.longitude) {
-                    locationHeaders = {
-                        'X-Browser-Latitude': location.latitude.toString(),
-                        'X-Browser-Longitude': location.longitude.toString(),
-                        'X-Location-Accuracy': location.accuracy ? location.accuracy.toString() : '0'
-                    };
-                }
-            } catch (err) {
-                console.error('Error parsing location data:', err);
-            }
+        if (!user || user.password !== password) {
+            return { success: false, error: 'Correo o contraseña incorrectos' }
         }
 
-        const config = {
-            ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token && { 'Authorization': `Bearer ${token}` }),
-                ...locationHeaders,
-                ...options.headers,
+        return {
+            success: true,
+            data: {
+                token: fakeToken('token'),
+                refreshToken: fakeToken('refresh'),
+                usuario: publicUser(user),
             },
         }
+    },
 
-        try {
-            const response = await fetch(`${API_URL}${endpoint}`, config)
-            const data = await response.json()
+    async register(nombre, email, password, secretPhrase, rol = 'CAPTURISTA') {
+        await delay()
 
-            if (!response.ok) {
-                return {
-                    success: false,
-                    error: data.message || data.error || 'Error en la petición'
-                }
-            }
-
-            return data
-        } catch (error) {
-            console.error('API Client Error:', error)
-            return { success: false, error: error.message || 'Error de conexión' }
+        if (mockUsers.some((u) => u.email.toLowerCase() === String(email).toLowerCase())) {
+            return { success: false, error: 'Ya existe una cuenta con ese correo' }
         }
-    },
 
-    // ✅ RUTAS CORREGIDAS CON
-    async login(email, password) {
-        return this.request('/api/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password })
-        })
-    },
-
-    async register(nombre, email, password, secretPhrase, rol) {
-        return this.request('/api/auth/register', {
-            method: 'POST',
-            body: JSON.stringify({ nombre, email, password, secretPhrase, rol })
-        })
+        mockUsers.push({ id: nextUserId++, nombre, email, password, secretPhrase, rol })
+        return { success: true }
     },
 
     async logout() {
-        return this.request('/api/auth/logout', {
-            method: 'POST'
-        })
+        await delay()
+        return { success: true }
     },
 
-    async refreshToken(refreshToken) {
-        return this.request('/api/auth/refresh', {
-            method: 'POST',
-            body: JSON.stringify({ refreshToken })
-        })
+    async refreshToken() {
+        await delay()
+        return { success: true, data: { token: fakeToken('token') } }
+    },
+
+    async verifyToken() {
+        // En modo de datos falsos cualquier token guardado localmente se considera válido.
+        await delay()
+        return { success: true }
     },
 
     async getCurrentUser() {
-        return this.request('/api/auth/me', {
-            method: 'GET'
-        })
+        await delay()
+        const storedUser = mockUsers[0]
+        return { success: true, data: publicUser(storedUser) }
     },
 
     async changePassword(oldPassword, newPassword) {
-        return this.request('/api/auth/change-password', {
-            method: 'PUT',
-            body: JSON.stringify({ oldPassword, newPassword })
-        })
+        await delay()
+        return { success: true }
+    },
+
+    async decryptPassword(userId, masterPhrase) {
+        await delay()
+        return { success: true, data: { decryptedPassword: '••••••••' } }
     },
 
     async getSessions() {
-        return this.request('/api/auth/sessions', {
-            method: 'GET'
-        })
+        await delay()
+        return { success: true, data: [] }
     },
 
-    // APIs Electorales
+    // APIs Electorales (delegan al mismo cliente de datos falsos del dashboard)
     async getStats() {
-        return this.request('/api/electoral/stats', {
-            method: 'GET'
-        })
+        return ElectoralApi.getGeneralStats()
     },
 
     async getStates() {
-        return this.request('/api/electoral/states', {
-            method: 'GET'
-        })
+        return ElectoralApi.getAllStates()
     },
 
     async getFamilies(filters = {}) {
-        const query = new URLSearchParams(filters).toString()
-        return this.request(`/api/electoral/families${query ? '?' + query : ''}`, {
-            method: 'GET'
-        })
+        return ElectoralApi.getAllFamilies(filters)
     },
 
     async getPersons(filters = {}) {
-        const query = new URLSearchParams(filters).toString()
-        return this.request(`/api/electoral/persons${query ? '?' + query : ''}`, {
-            method: 'GET'
-        })
-    }
+        return ElectoralApi.getAllPersons(filters)
+    },
 }
 
 export default apiClient

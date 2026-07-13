@@ -1,77 +1,53 @@
-import CookieManager from '@/Utils/Login/CookieManager'
+import {
+    estados,
+    delegaciones,
+    colonias,
+    familias,
+    personas,
+    createRecord,
+    updateRecord,
+    deleteRecord,
+    findById,
+    familiasByColonia,
+    personasByFamilia,
+    coloniasByDelegacion,
+    delegacionesByEstado,
+    countFamiliasEnDelegacion,
+    countPersonasEnDelegacion,
+    countColoniasEnEstado,
+    countFamiliasEnEstado,
+    countPersonasEnEstado,
+} from './mockElectoralData'
 
 // ============================================
-// 🌐 CONFIGURACIÓN BASE
+// 🎭 CLIENTE DE DATOS FALSOS (SIN BACKEND REAL)
+// Simula la latencia y el contrato { success, data } / { success, error }
+// que antes devolvía la API real, pero todo se resuelve en memoria.
 // ============================================
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api'
+const SIMULATED_DELAY_MS = 200
 
-// ============================================
-// 🔧 HELPER: Fetch con autenticación y ubicación
-// ============================================
-const fetchWithAuth = async (endpoint, options = {}) => {
-    const token = CookieManager.get('auth_token')
+const delay = (ms = SIMULATED_DELAY_MS) => new Promise((resolve) => setTimeout(resolve, ms))
 
-    // Obtener ubicación del usuario desde sessionStorage
-    const locationData = typeof window !== 'undefined'
-        ? sessionStorage.getItem('userLocation')
-        : null;
+const ok = async (data) => {
+    await delay()
+    return { success: true, data }
+}
 
-    let locationHeaders = {};
-    if (locationData) {
-        try {
-            const location = JSON.parse(locationData);
-            if (location.latitude && location.longitude) {
-                locationHeaders = {
-                    'X-Browser-Latitude': location.latitude.toString(),
-                    'X-Browser-Longitude': location.longitude.toString(),
-                    'X-Location-Accuracy': location.accuracy ? location.accuracy.toString() : '0'
-                };
-            }
-        } catch (err) {
-            console.error('Error parsing location data:', err);
-        }
-    }
+const fail = async (error) => {
+    await delay()
+    return { success: false, error: error?.message || String(error) }
+}
 
-    const headers = {
-        'Content-Type': 'application/json',
-        ...locationHeaders,
-        ...options.headers,
-    }
-
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-    }
-
+const runMock = async (fn) => {
     try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-            ...options,
-            headers,
-        })
-
-        const data = await response.json()
-
-        if (!response.ok) {
-            return {
-                success: false,
-                error: data.message || data.error || 'Error en la petición',
-                status: response.status
-            }
-        }
-
-        // El backend siempre retorna { success: true, data: {...} }
-        // Retornamos el objeto completo
-        return data
+        return await ok(fn())
     } catch (error) {
-        console.error('Electoral API Error:', error)
-        return {
-            success: false,
-            error: 'Error de conexión con el servidor'
-        }
+        return await fail(error)
     }
 }
 
 // ============================================
-// 📊 ELECTORAL API CLIENT
+// 📊 ELECTORAL API CLIENT (MOCK)
 // ============================================
 const ElectoralApi = {
 
@@ -79,390 +55,318 @@ const ElectoralApi = {
 
     /**
      * Obtiene las estadísticas generales del dashboard
-     * GET /electoral/stats
      */
     getGeneralStats: async () => {
-        return await fetchWithAuth('/electoral/stats', {
-            method: 'GET'
+        return runMock(() => {
+            const totalFamilias = familias.length
+            const totalPersonas = personas.length
+            const totalColonias = colonias.length
+            const totalDelegaciones = delegaciones.length
+            const puedenVotar = personas.filter((p) => p.puede_votar).length
+            const coverage = totalPersonas === 0
+                ? 0
+                : Math.round((puedenVotar / totalPersonas) * 100)
+
+            return [
+                { title: 'Estados', value: estados.length, subtitle: 'Estados registrados', trend: 0, iconType: 'map' },
+                { title: 'Delegaciones', value: totalDelegaciones, subtitle: 'Delegaciones/Alcaldías', trend: 2, iconType: 'map' },
+                { title: 'Colonias', value: totalColonias, subtitle: 'Colonias registradas', trend: 3, iconType: 'map' },
+                { title: 'Familias Registradas', value: totalFamilias, subtitle: 'Total de familias', trend: 5, iconType: 'users' },
+                { title: 'Personas Empadronadas', value: totalPersonas, subtitle: 'Total de personas', trend: 4, iconType: 'usercheck' },
+                { title: 'Cobertura', value: `${coverage}%`, subtitle: 'Empadronamiento', trend: 1, iconType: 'chart' },
+            ]
         })
     },
 
     /**
      * Obtiene el resumen mensual (gráfica)
-     * GET /electoral/monthly-summary
      */
     getMonthlySummary: async () => {
-        return await fetchWithAuth('/electoral/monthly-summary', {
-            method: 'GET'
+        return runMock(() => {
+            const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun']
+            return meses.map((month, index) => ({
+                month,
+                familias: Math.round((familias.length / meses.length) * (index + 1)),
+                personas: Math.round((personas.length / meses.length) * (index + 1)),
+                votos: Math.round((personas.filter((p) => p.puede_votar).length / meses.length) * (index + 1)),
+            }))
         })
     },
 
     /**
      * Obtiene la actividad reciente
-     * GET /electoral/recent-activity
      */
     getRecentActivity: async () => {
-        return await fetchWithAuth('/electoral/recent-activity', {
-            method: 'GET'
+        return runMock(() => {
+            const ultimasFamilias = [...familias].slice(-3).reverse()
+            const ultimasPersonas = [...personas].slice(-2).reverse()
+
+            return [
+                ...ultimasFamilias.map((f) => ({
+                    title: `Se registró la ${f.nombre_familia}`,
+                    time: 'Hace poco',
+                })),
+                ...ultimasPersonas.map((p) => ({
+                    title: `Se empadronó a ${p.nombre} ${p.apellidos}`,
+                    time: 'Hace poco',
+                })),
+            ]
         })
     },
 
     // ==================== ESTADOS ====================
 
-    /**
-     * Obtiene todos los estados
-     * GET /electoral/states
-     */
     getAllStates: async () => {
-        return await fetchWithAuth('/electoral/states', {
-            method: 'GET'
-        })
+        return runMock(() =>
+            estados.map((estado) => ({
+                id: estado.id,
+                name: estado.nombre,
+                code: estado.codigo,
+                delegations: delegacionesByEstado(estado.id).length,
+                families: countFamiliasEnEstado(estado.id),
+                persons: countPersonasEnEstado(estado.id),
+            }))
+        )
     },
 
     /**
      * Obtiene un estado específico con sus delegaciones
-     * GET /electoral/states/:stateId
      */
     getStateById: async (stateId) => {
-        return await fetchWithAuth(`/electoral/states/${stateId}`, {
-            method: 'GET'
+        return runMock(() => {
+            const estado = findById(estados, stateId)
+            const delegacionesEstado = delegacionesByEstado(estado.id)
+            const families = countFamiliasEnEstado(estado.id)
+            const persons = countPersonasEnEstado(estado.id)
+            const puedenVotar = delegacionesEstado.reduce((total, delegacion) => {
+                return total + coloniasByDelegacion(delegacion.id).reduce((sub, colonia) => {
+                    return sub + familiasByColonia(colonia.id).reduce((s2, familia) => {
+                        return s2 + personasByFamilia(familia.id).filter((p) => p.puede_votar).length
+                    }, 0)
+                }, 0)
+            }, 0)
+
+            return {
+                name: estado.nombre,
+                code: estado.codigo,
+                colonies: countColoniasEnEstado(estado.id),
+                families,
+                persons,
+                coverage: persons === 0 ? '0%' : `${Math.round((puedenVotar / persons) * 100)}%`,
+                coloniesTrend: 2,
+                familiesTrend: 4,
+                personsTrend: 3,
+                coverageTrend: 1,
+                delegations: delegacionesEstado.map((delegacion) => ({
+                    name: delegacion.nombre,
+                    colonies: coloniasByDelegacion(delegacion.id).length,
+                    families: countFamiliasEnDelegacion(delegacion.id),
+                })),
+            }
         })
     },
 
-    /**
-     * Crea un nuevo estado
-     * POST /electoral/states
-     */
     createState: async (stateData) => {
-        return await fetchWithAuth('/electoral/states', {
-            method: 'POST',
-            body: JSON.stringify(stateData)
-        })
+        return runMock(() => createRecord(estados, { codigo: stateData.codigo, nombre: stateData.nombre }))
     },
 
-    /**
-     * Actualiza un estado
-     * PUT /electoral/states/:stateId
-     */
     updateState: async (stateId, stateData) => {
-        return await fetchWithAuth(`/electoral/states/${stateId}`, {
-            method: 'PUT',
-            body: JSON.stringify(stateData)
-        })
+        return runMock(() => updateRecord(estados, stateId, stateData))
     },
 
-    /**
-     * Elimina un estado
-     * DELETE /electoral/states/:stateId
-     */
     deleteState: async (stateId) => {
-        return await fetchWithAuth(`/electoral/states/${stateId}`, {
-            method: 'DELETE'
-        })
+        return runMock(() => deleteRecord(estados, stateId))
     },
 
     // ==================== DELEGACIONES ====================
 
-    /**
-     * Obtiene todas las delegaciones de un estado
-     * GET /electoral/states/:stateId/delegations
-     */
     getDelegationsByState: async (stateId) => {
-        return await fetchWithAuth(`/electoral/states/${stateId}/delegations`, {
-            method: 'GET'
-        })
+        return runMock(() => delegacionesByEstado(stateId))
     },
 
-    /**
-     * Obtiene todas las delegaciones (sin filtrar por estado)
-     * GET /electoral/delegations
-     */
     getAllDelegations: async () => {
-        return await fetchWithAuth('/electoral/delegations', {
-            method: 'GET'
-        })
+        return runMock(() => delegaciones)
     },
 
-    /**
-     * Obtiene una delegación específica
-     * GET /electoral/delegations/:delegationId
-     */
     getDelegationById: async (delegationId) => {
-        return await fetchWithAuth(`/electoral/delegations/${delegationId}`, {
-            method: 'GET'
-        })
+        return runMock(() => findById(delegaciones, delegationId))
     },
 
-    /**
-     * Crea una nueva delegación
-     * POST /electoral/delegations
-     */
     createDelegation: async (delegationData) => {
-        return await fetchWithAuth('/electoral/delegations', {
-            method: 'POST',
-            body: JSON.stringify(delegationData)
-        })
+        return runMock(() => createRecord(delegaciones, delegationData))
     },
 
-    /**
-     * Actualiza una delegación
-     * PUT /electoral/delegations/:delegationId
-     */
     updateDelegation: async (delegationId, delegationData) => {
-        return await fetchWithAuth(`/electoral/delegations/${delegationId}`, {
-            method: 'PUT',
-            body: JSON.stringify(delegationData)
-        })
+        return runMock(() => updateRecord(delegaciones, delegationId, delegationData))
     },
 
-    /**
-     * Elimina una delegación
-     * DELETE /electoral/delegations/:delegationId
-     */
     deleteDelegation: async (delegationId) => {
-        return await fetchWithAuth(`/electoral/delegations/${delegationId}`, {
-            method: 'DELETE'
-        })
+        return runMock(() => deleteRecord(delegaciones, delegationId))
     },
 
     // ==================== COLONIAS ====================
 
-    /**
-     * Obtiene todas las colonias de una delegación
-     * GET /electoral/delegations/:delegationId/colonies
-     */
     getColoniesByDelegation: async (delegationId) => {
-        return await fetchWithAuth(`/electoral/delegations/${delegationId}/colonies`, {
-            method: 'GET'
-        })
+        return runMock(() => coloniasByDelegacion(delegationId))
     },
 
-    /**
-     * Obtiene todas las colonias (sin filtrar por delegación)
-     * GET /electoral/colonies
-     */
     getAllColonies: async () => {
-        return await fetchWithAuth('/electoral/colonies', {
-            method: 'GET'
-        })
+        return runMock(() => colonias)
     },
 
-    /**
-     * Crea una nueva colonia
-     * POST /electoral/colonies
-     */
     createColony: async (colonyData) => {
-        return await fetchWithAuth('/electoral/colonies', {
-            method: 'POST',
-            body: JSON.stringify(colonyData)
-        })
+        return runMock(() => createRecord(colonias, colonyData))
     },
 
-    /**
-     * Actualiza una colonia
-     * PUT /electoral/colonies/:colonyId
-     */
     updateColony: async (colonyId, colonyData) => {
-        return await fetchWithAuth(`/electoral/colonies/${colonyId}`, {
-            method: 'PUT',
-            body: JSON.stringify(colonyData)
-        })
+        return runMock(() => updateRecord(colonias, colonyId, colonyData))
     },
 
-    /**
-     * Elimina una colonia
-     * DELETE /electoral/colonies/:colonyId
-     */
     deleteColony: async (colonyId) => {
-        return await fetchWithAuth(`/electoral/colonies/${colonyId}`, {
-            method: 'DELETE'
-        })
+        return runMock(() => deleteRecord(colonias, colonyId))
     },
 
     // ==================== FAMILIAS ====================
 
-    /**
-     * Obtiene todas las familias
-     * GET /electoral/families
-     */
     getAllFamilies: async (filters = {}) => {
-        const queryParams = new URLSearchParams(filters).toString()
-        return await fetchWithAuth(`/electoral/families${queryParams ? '?' + queryParams : ''}`, {
-            method: 'GET'
+        return runMock(() => {
+            let result = familias
+            if (filters.colonia_id) {
+                result = result.filter((f) => String(f.id_colonia) === String(filters.colonia_id))
+            }
+            if (filters.estado_familia) {
+                result = result.filter((f) => f.estado_familia === filters.estado_familia)
+            }
+            return result
         })
     },
 
-    /**
-     * Obtiene una familia específica
-     * GET /electoral/families/:familyId
-     */
     getFamilyById: async (familyId) => {
-        return await fetchWithAuth(`/electoral/families/${familyId}`, {
-            method: 'GET'
+        return runMock(() => {
+            const familia = findById(familias, familyId)
+            return { ...familia, personas: personasByFamilia(familia.id) }
         })
     },
 
-    /**
-     * Crea una nueva familia
-     * POST /electoral/families
-     */
     createFamily: async (familyData) => {
-        return await fetchWithAuth('/electoral/families', {
-            method: 'POST',
-            body: JSON.stringify(familyData)
-        })
+        return runMock(() => createRecord(familias, familyData))
     },
 
-    /**
-     * Actualiza una familia
-     * PUT /electoral/families/:familyId
-     */
     updateFamily: async (familyId, familyData) => {
-        return await fetchWithAuth(`/electoral/families/${familyId}`, {
-            method: 'PUT',
-            body: JSON.stringify(familyData)
-        })
+        return runMock(() => updateRecord(familias, familyId, familyData))
     },
 
-    /**
-     * Elimina una familia
-     * DELETE /electoral/families/:familyId
-     */
     deleteFamily: async (familyId) => {
-        return await fetchWithAuth(`/electoral/families/${familyId}`, {
-            method: 'DELETE'
-        })
+        return runMock(() => deleteRecord(familias, familyId))
     },
 
     // ==================== PERSONAS ====================
 
-    /**
-     * Obtiene todas las personas
-     * GET /electoral/persons
-     */
     getAllPersons: async (filters = {}) => {
-        const queryParams = new URLSearchParams(filters).toString()
-        return await fetchWithAuth(`/electoral/persons${queryParams ? '?' + queryParams : ''}`, {
-            method: 'GET'
+        return runMock(() => {
+            let result = personas
+            if (filters.familia_id) {
+                result = result.filter((p) => String(p.id_familia) === String(filters.familia_id))
+            }
+            if (filters.puede_votar !== undefined) {
+                result = result.filter((p) => String(p.puede_votar) === String(filters.puede_votar))
+            }
+            if (filters.limit) {
+                result = result.slice(0, parseInt(filters.limit, 10))
+            }
+            return result
         })
     },
 
-    /**
-     * Obtiene una persona específica
-     * GET /electoral/persons/:personId
-     */
     getPersonById: async (personId) => {
-        return await fetchWithAuth(`/electoral/persons/${personId}`, {
-            method: 'GET'
-        })
+        return runMock(() => findById(personas, personId))
     },
 
-    /**
-     * Crea una nueva persona
-     * POST /electoral/persons
-     */
     createPerson: async (personData) => {
-        return await fetchWithAuth('/electoral/persons', {
-            method: 'POST',
-            body: JSON.stringify(personData)
-        })
+        return runMock(() => createRecord(personas, personData))
     },
 
-    /**
-     * Actualiza una persona
-     * PUT /electoral/persons/:personId
-     */
     updatePerson: async (personId, personData) => {
-        return await fetchWithAuth(`/electoral/persons/${personId}`, {
-            method: 'PUT',
-            body: JSON.stringify(personData)
-        })
+        return runMock(() => updateRecord(personas, personId, personData))
     },
 
-    /**
-     * Elimina una persona
-     * DELETE /electoral/persons/:personId
-     */
     deletePerson: async (personId) => {
-        return await fetchWithAuth(`/electoral/persons/${personId}`, {
-            method: 'DELETE'
-        })
+        return runMock(() => deleteRecord(personas, personId))
     },
 
     // ==================== BÚSQUEDA ====================
 
-    /**
-     * Búsqueda general (CURP, nombre, teléfono, dirección)
-     * GET /electoral/search?q=termino
-     */
     search: async (searchTerm) => {
-        return await fetchWithAuth(`/electoral/search?q=${encodeURIComponent(searchTerm)}`, {
-            method: 'GET'
+        return runMock(() => {
+            const term = String(searchTerm || '').toLowerCase()
+            if (!term) return []
+            return personas.filter((p) =>
+                p.curp.toLowerCase().includes(term) ||
+                `${p.nombre} ${p.apellidos}`.toLowerCase().includes(term) ||
+                p.telefono.includes(term) ||
+                (p.direccion || '').toLowerCase().includes(term)
+            )
         })
     },
 
-    /**
-     * Búsqueda por CURP
-     * GET /electoral/search/curp/:curp
-     */
     searchByCurp: async (curp) => {
-        return await fetchWithAuth(`/electoral/search/curp/${curp}`, {
-            method: 'GET'
+        return runMock(() => {
+            const persona = personas.find((p) => p.curp.toLowerCase() === String(curp).toLowerCase())
+            if (!persona) throw new Error('No se encontró ninguna persona con ese CURP')
+            return persona
         })
     },
 
     // ==================== REPORTES ====================
 
-    /**
-     * Genera reporte de un estado
-     * GET /electoral/reports/state/:stateId
-     */
     generateStateReport: async (stateId) => {
-        return await fetchWithAuth(`/electoral/reports/state/${stateId}`, {
-            method: 'GET'
+        return runMock(() => {
+            const estado = findById(estados, stateId)
+            return {
+                estado: estado.nombre,
+                families: countFamiliasEnEstado(estado.id),
+                persons: countPersonasEnEstado(estado.id),
+                generado: new Date().toISOString(),
+            }
         })
     },
 
-    /**
-     * Genera reporte de una delegación
-     * GET /electoral/reports/delegation/:delegationId
-     */
     generateDelegationReport: async (delegationId) => {
-        return await fetchWithAuth(`/electoral/reports/delegation/${delegationId}`, {
-            method: 'GET'
+        return runMock(() => {
+            const delegacion = findById(delegaciones, delegationId)
+            return {
+                delegacion: delegacion.nombre,
+                families: countFamiliasEnDelegacion(delegacion.id),
+                persons: countPersonasEnDelegacion(delegacion.id),
+                generado: new Date().toISOString(),
+            }
         })
     },
 
-    /**
-     * Exporta datos a CSV
-     * GET /electoral/export/csv
-     */
     exportToCSV: async (type, id) => {
-        return await fetchWithAuth(`/electoral/export/csv?type=${type}&id=${id}`, {
-            method: 'GET'
-        })
+        return runMock(() => ({ type, id, mensaje: 'Exportación simulada (sin backend real)' }))
     },
 
     // ==================== ESTADÍSTICAS AVANZADAS ====================
 
-    /**
-     * Obtiene estadísticas de cobertura por zona
-     * GET /electoral/analytics/coverage
-     */
     getCoverageAnalytics: async () => {
-        return await fetchWithAuth('/electoral/analytics/coverage', {
-            method: 'GET'
-        })
+        return runMock(() =>
+            estados.map((estado) => {
+                const persons = countPersonasEnEstado(estado.id)
+                return {
+                    estado: estado.nombre,
+                    families: countFamiliasEnEstado(estado.id),
+                    persons,
+                }
+            })
+        )
     },
 
-    /**
-     * Obtiene tendencias de crecimiento
-     * GET /electoral/analytics/trends
-     */
     getGrowthTrends: async (period = 'monthly') => {
-        return await fetchWithAuth(`/electoral/analytics/trends?period=${period}`, {
-            method: 'GET'
-        })
+        return runMock(() => ({
+            period,
+            trend: [4, 6, 5, 8, 7, 9],
+        }))
     },
 
 }
