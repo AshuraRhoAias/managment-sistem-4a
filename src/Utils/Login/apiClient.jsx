@@ -11,6 +11,7 @@ const delay = (ms = SIMULATED_DELAY_MS) => new Promise((resolve) => setTimeout(r
 let nextUserId = 100
 const mockUsers = [
     { id: 1, nombre: 'Administrador', email: 'admin@demo.com', password: 'admin123', rol: 'ADMIN' },
+    { id: 2, nombre: 'Usuario de Prueba', email: 'test@test.com', password: '123456', rol: 'ADMIN' },
 ]
 
 const fakeToken = (prefix) => `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now()}`
