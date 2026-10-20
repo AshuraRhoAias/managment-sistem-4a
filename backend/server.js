@@ -68,6 +68,8 @@ const corsOptions = {
     'X-Browser-Longitude',
     'X-Location-Accuracy'
   ],
+  // Necesario para que el navegador pueda leer el nombre del archivo en las descargas (CSV)
+  exposedHeaders: ['Content-Disposition'],
 };
 
 app.use(cors(corsOptions));

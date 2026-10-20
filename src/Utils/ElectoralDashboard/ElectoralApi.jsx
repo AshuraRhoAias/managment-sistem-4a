@@ -1,374 +1,365 @@
+import dataSource from './dataSources'
+import { toCsv, downloadBlob } from '@/lib/download'
 import {
-    estados,
-    delegaciones,
-    colonias,
-    familias,
-    personas,
-    createRecord,
-    updateRecord,
-    deleteRecord,
-    findById,
-    familiasByColonia,
-    personasByFamilia,
-    coloniasByDelegacion,
-    delegacionesByEstado,
-    countFamiliasEnDelegacion,
-    countPersonasEnDelegacion,
-    countColoniasEnEstado,
-    countFamiliasEnEstado,
-    countPersonasEnEstado,
-} from './mockElectoralData'
+    createIndex,
+    buildStatsCards,
+    buildStatesList,
+    buildStateDetail,
+    buildMonthlySummary,
+    buildRecentActivity,
+    buildColoniasView,
+    buildFamiliasView,
+    buildReport,
+    buildReportFilters,
+    buildCoverageAnalytics,
+    searchPersons,
+} from './viewModels'
 
 // ============================================
-// 🎭 CLIENTE DE DATOS FALSOS (SIN BACKEND REAL)
-// Simula la latencia y el contrato { success, data } / { success, error }
-// que antes devolvía la API real, pero todo se resuelve en memoria.
+// 📊 ELECTORAL API (fachada única para la UI)
+//
+// Toda la UI habla con este objeto. Por debajo usa un data source:
+//   - mock → datos en memoria          (NEXT_PUBLIC_API_MODE=mock, por defecto)
+//   - http → backend Express + MySQL   (NEXT_PUBLIC_API_MODE=real)
+// Los métodos devuelven siempre { success, data } o { success: false, error }.
 // ============================================
-const SIMULATED_DELAY_MS = 200
 
-const delay = (ms = SIMULATED_DELAY_MS) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const ok = async (data) => {
-    await delay()
-    return { success: true, data }
-}
-
-const fail = async (error) => {
-    await delay()
-    return { success: false, error: error?.message || String(error) }
-}
-
-const runMock = async (fn) => {
+// Convierte cualquier excepción en { success: false, error }
+const run = async (fn) => {
     try {
-        return await ok(fn())
+        return { success: true, data: await fn() }
     } catch (error) {
-        return await fail(error)
+        return { success: false, error: error?.message || String(error) }
     }
 }
 
-// ============================================
-// 📊 ELECTORAL API CLIENT (MOCK)
-// ============================================
+const loadIndex = async () => createIndex(await dataSource.loadTables())
+
+const sameText = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
+
+const filterBy = (rows, filters = {}) =>
+    rows.filter((row) =>
+        Object.entries(filters).every(([key, expected]) => {
+            if (expected === undefined || expected === null || expected === '') return true
+            return String(row[key]) === String(expected)
+        })
+    )
+
+// Busca la colonia a partir de los nombres escritos en el formulario de familias
+const resolveColonia = (index, { state, delegation, colony }) => {
+    const { colonias, delegaciones, estados } = index.tables
+    const match = colonias.find((colonia) => {
+        if (!sameText(colonia.nombre, colony)) return false
+        const delegacion = delegaciones.find((d) => String(d.id) === String(colonia.id_delegacion))
+        const estado = delegacion && estados.find((e) => String(e.id) === String(delegacion.id_estado))
+        return delegacion && estado && sameText(delegacion.nombre, delegation) && sameText(estado.nombre, state)
+    })
+    if (!match) {
+        throw new Error(`No existe la colonia "${colony}" en ${delegation}, ${state}. Verifica que esté registrada en Zonas Electorales.`)
+    }
+    return match
+}
+
+const birthDateFromAge = (age) => {
+    const date = new Date()
+    date.setFullYear(date.getFullYear() - Number(age))
+    return date.toISOString().slice(0, 10)
+}
+
+const memberToPerson = (member, familiaId) => {
+    const label = member.name || 'sin nombre'
+    if (!String(member.name || '').trim()) throw new Error('Todos los miembros deben tener nombre')
+    if (!String(member.curp || '').trim()) throw new Error(`Falta el CURP de ${label}`)
+    if (member.age === '' || member.age === undefined || Number.isNaN(Number(member.age))) throw new Error(`Falta la edad de ${label}`)
+    if (!String(member.gender || '').trim()) throw new Error(`Falta el género de ${label}`)
+
+    return {
+        id_familia: familiaId,
+        nombre: member.name.trim(),
+        curp: member.curp.trim(),
+        edad: Number(member.age),
+        genero: member.gender.trim(),
+        telefono: member.phone || '',
+        rol_familia: member.role || 'MIEMBRO',
+        fecha_nacimiento: birthDateFromAge(member.age),
+    }
+}
+
+const CSV_COLUMNS = {
+    families: [
+        { header: 'ID', key: 'id' },
+        { header: 'Familia', key: 'name' },
+        { header: 'Jefe de familia', key: 'jefe' },
+        { header: 'Estado', key: 'state' },
+        { header: 'Delegación', key: 'delegation' },
+        { header: 'Colonia', key: 'colony' },
+        { header: 'Dirección', key: 'address' },
+        { header: 'Personas', key: 'persons' },
+        { header: 'Situación', key: 'status' },
+    ],
+    persons: [
+        { header: 'ID', key: 'id' },
+        { header: 'Nombre', key: 'nombre' },
+        { header: 'CURP', key: 'curp' },
+        { header: 'Teléfono', key: 'telefono' },
+        { header: 'Edad', key: 'edad' },
+        { header: 'Género', key: 'genero' },
+        { header: 'Rol', key: 'rol_familia' },
+        { header: 'Puede votar', value: (p) => (p.puede_votar ? 'Sí' : 'No') },
+    ],
+}
+
 const ElectoralApi = {
+
+    // ==================== RECURSOS GENÉRICOS ====================
+
+    /**
+     * CRUD para cualquier recurso nuevo sin escribir métodos a mano:
+     *   const casillas = ElectoralApi.crud('casillas')
+     *   await casillas.list({ id_colonia: 3 })   // { success, data }
+     * En modo real llama a /api/electoral/<name>; en modo mock usa la tabla
+     * registrada con registerMockTable(name, rows, requiredFields).
+     */
+    crud: (name) => ({
+        list: (query) => run(() => dataSource.list(name, query)),
+        get: (id) =>
+            run(async () => {
+                const found = (await dataSource.list(name)).find((row) => String(row.id) === String(id))
+                if (!found) throw new Error('Registro no encontrado')
+                return found
+            }),
+        create: (data) => run(() => dataSource.create(name, data)),
+        update: (id, data) => run(() => dataSource.update(name, id, data)),
+        remove: (id) => run(() => dataSource.remove(name, id)),
+    }),
 
     // ==================== DASHBOARD GENERAL ====================
 
-    /**
-     * Obtiene las estadísticas generales del dashboard
-     */
-    getGeneralStats: async () => {
-        return runMock(() => {
-            const totalFamilias = familias.length
-            const totalPersonas = personas.length
-            const totalColonias = colonias.length
-            const totalDelegaciones = delegaciones.length
-            const puedenVotar = personas.filter((p) => p.puede_votar).length
-            const coverage = totalPersonas === 0
-                ? 0
-                : Math.round((puedenVotar / totalPersonas) * 100)
+    getGeneralStats: () => run(async () => buildStatsCards(await loadIndex())),
 
-            return [
-                { title: 'Estados', value: estados.length, subtitle: 'Estados registrados', trend: 0, iconType: 'map' },
-                { title: 'Delegaciones', value: totalDelegaciones, subtitle: 'Delegaciones/Alcaldías', trend: 2, iconType: 'map' },
-                { title: 'Colonias', value: totalColonias, subtitle: 'Colonias registradas', trend: 3, iconType: 'map' },
-                { title: 'Familias Registradas', value: totalFamilias, subtitle: 'Total de familias', trend: 5, iconType: 'users' },
-                { title: 'Personas Empadronadas', value: totalPersonas, subtitle: 'Total de personas', trend: 4, iconType: 'usercheck' },
-                { title: 'Cobertura', value: `${coverage}%`, subtitle: 'Empadronamiento', trend: 1, iconType: 'chart' },
-            ]
-        })
-    },
+    getMonthlySummary: () => run(async () => buildMonthlySummary(await loadIndex())),
 
-    /**
-     * Obtiene el resumen mensual (gráfica)
-     */
-    getMonthlySummary: async () => {
-        return runMock(() => {
-            const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun']
-            return meses.map((month, index) => ({
-                month,
-                familias: Math.round((familias.length / meses.length) * (index + 1)),
-                personas: Math.round((personas.length / meses.length) * (index + 1)),
-                votos: Math.round((personas.filter((p) => p.puede_votar).length / meses.length) * (index + 1)),
-            }))
-        })
-    },
-
-    /**
-     * Obtiene la actividad reciente
-     */
-    getRecentActivity: async () => {
-        return runMock(() => {
-            const ultimasFamilias = [...familias].slice(-3).reverse()
-            const ultimasPersonas = [...personas].slice(-2).reverse()
-
-            return [
-                ...ultimasFamilias.map((f) => ({
-                    title: `Se registró la ${f.nombre_familia}`,
-                    time: 'Hace poco',
-                })),
-                ...ultimasPersonas.map((p) => ({
-                    title: `Se empadronó a ${p.nombre} ${p.apellidos}`,
-                    time: 'Hace poco',
-                })),
-            ]
-        })
-    },
+    getRecentActivity: () => run(async () => buildRecentActivity(await loadIndex())),
 
     // ==================== ESTADOS ====================
 
-    getAllStates: async () => {
-        return runMock(() =>
-            estados.map((estado) => ({
-                id: estado.id,
-                name: estado.nombre,
-                code: estado.codigo,
-                delegations: delegacionesByEstado(estado.id).length,
-                families: countFamiliasEnEstado(estado.id),
-                persons: countPersonasEnEstado(estado.id),
-            }))
-        )
-    },
+    // Resumen con conteos para el dashboard ({ id, name, code, delegations, families, persons })
+    getAllStates: () => run(async () => buildStatesList(await loadIndex())),
 
-    /**
-     * Obtiene un estado específico con sus delegaciones
-     */
-    getStateById: async (stateId) => {
-        return runMock(() => {
-            const estado = findById(estados, stateId)
-            const delegacionesEstado = delegacionesByEstado(estado.id)
-            const families = countFamiliasEnEstado(estado.id)
-            const persons = countPersonasEnEstado(estado.id)
-            const puedenVotar = delegacionesEstado.reduce((total, delegacion) => {
-                return total + coloniasByDelegacion(delegacion.id).reduce((sub, colonia) => {
-                    return sub + familiasByColonia(colonia.id).reduce((s2, familia) => {
-                        return s2 + personasByFamilia(familia.id).filter((p) => p.puede_votar).length
-                    }, 0)
-                }, 0)
-            }, 0)
+    // Registros crudos ({ id, codigo, nombre }) para los formularios de administración
+    listStates: () => run(() => dataSource.list('estados')),
 
-            return {
-                name: estado.nombre,
-                code: estado.codigo,
-                colonies: countColoniasEnEstado(estado.id),
-                families,
-                persons,
-                coverage: persons === 0 ? '0%' : `${Math.round((puedenVotar / persons) * 100)}%`,
-                coloniesTrend: 2,
-                familiesTrend: 4,
-                personsTrend: 3,
-                coverageTrend: 1,
-                delegations: delegacionesEstado.map((delegacion) => ({
-                    name: delegacion.nombre,
-                    colonies: coloniasByDelegacion(delegacion.id).length,
-                    families: countFamiliasEnDelegacion(delegacion.id),
-                })),
-            }
-        })
-    },
+    getStateById: (stateId) => run(async () => buildStateDetail(await loadIndex(), stateId)),
 
-    createState: async (stateData) => {
-        return runMock(() => createRecord(estados, { codigo: stateData.codigo, nombre: stateData.nombre }))
-    },
+    createState: (stateData) => run(() => dataSource.create('estados', { codigo: stateData.codigo, nombre: stateData.nombre })),
 
-    updateState: async (stateId, stateData) => {
-        return runMock(() => updateRecord(estados, stateId, stateData))
-    },
+    updateState: (stateId, stateData) => run(() => dataSource.update('estados', stateId, stateData)),
 
-    deleteState: async (stateId) => {
-        return runMock(() => deleteRecord(estados, stateId))
-    },
+    deleteState: (stateId) => run(() => dataSource.remove('estados', stateId)),
 
     // ==================== DELEGACIONES ====================
 
-    getDelegationsByState: async (stateId) => {
-        return runMock(() => delegacionesByEstado(stateId))
-    },
+    getDelegationsByState: (stateId) =>
+        run(async () => filterBy(await dataSource.list('delegaciones'), { id_estado: stateId })),
 
-    getAllDelegations: async () => {
-        return runMock(() => delegaciones)
-    },
+    getAllDelegations: () => run(() => dataSource.list('delegaciones')),
 
-    getDelegationById: async (delegationId) => {
-        return runMock(() => findById(delegaciones, delegationId))
-    },
+    getDelegationById: (delegationId) =>
+        run(async () => {
+            const found = (await dataSource.list('delegaciones')).find((d) => String(d.id) === String(delegationId))
+            if (!found) throw new Error('Delegación no encontrada')
+            return found
+        }),
 
-    createDelegation: async (delegationData) => {
-        return runMock(() => createRecord(delegaciones, delegationData))
-    },
+    createDelegation: (data) => run(() => dataSource.create('delegaciones', data)),
 
-    updateDelegation: async (delegationId, delegationData) => {
-        return runMock(() => updateRecord(delegaciones, delegationId, delegationData))
-    },
+    updateDelegation: (delegationId, data) => run(() => dataSource.update('delegaciones', delegationId, data)),
 
-    deleteDelegation: async (delegationId) => {
-        return runMock(() => deleteRecord(delegaciones, delegationId))
-    },
+    deleteDelegation: (delegationId) => run(() => dataSource.remove('delegaciones', delegationId)),
 
     // ==================== COLONIAS ====================
 
-    getColoniesByDelegation: async (delegationId) => {
-        return runMock(() => coloniasByDelegacion(delegationId))
-    },
+    getColoniesByDelegation: (delegationId) =>
+        run(async () => filterBy(await dataSource.list('colonias'), { id_delegacion: delegationId })),
 
-    getAllColonies: async () => {
-        return runMock(() => colonias)
-    },
+    getAllColonies: () => run(() => dataSource.list('colonias')),
 
-    createColony: async (colonyData) => {
-        return runMock(() => createRecord(colonias, colonyData))
-    },
+    createColony: (data) => run(() => dataSource.create('colonias', data)),
 
-    updateColony: async (colonyId, colonyData) => {
-        return runMock(() => updateRecord(colonias, colonyId, colonyData))
-    },
+    updateColony: (colonyId, data) => run(() => dataSource.update('colonias', colonyId, data)),
 
-    deleteColony: async (colonyId) => {
-        return runMock(() => deleteRecord(colonias, colonyId))
-    },
+    deleteColony: (colonyId) => run(() => dataSource.remove('colonias', colonyId)),
 
     // ==================== FAMILIAS ====================
 
-    getAllFamilies: async (filters = {}) => {
-        return runMock(() => {
-            let result = familias
-            if (filters.colonia_id) {
-                result = result.filter((f) => String(f.id_colonia) === String(filters.colonia_id))
-            }
-            if (filters.estado_familia) {
-                result = result.filter((f) => f.estado_familia === filters.estado_familia)
-            }
-            return result
-        })
-    },
+    getAllFamilies: (filters = {}) =>
+        run(async () => filterBy(await dataSource.list('familias', filters), {
+            id_colonia: filters.colonia_id,
+            estado: filters.estado_familia,
+        })),
 
-    getFamilyById: async (familyId) => {
-        return runMock(() => {
-            const familia = findById(familias, familyId)
-            return { ...familia, personas: personasByFamilia(familia.id) }
-        })
-    },
+    getFamilyById: (familyId) =>
+        run(async () => {
+            const index = await loadIndex()
+            const familia = index.tables.familias.find((f) => String(f.id) === String(familyId))
+            if (!familia) throw new Error('Familia no encontrada')
+            return { ...familia, personas: index.personasDe(familia.id) }
+        }),
 
-    createFamily: async (familyData) => {
-        return runMock(() => createRecord(familias, familyData))
-    },
+    createFamily: (data) => run(() => dataSource.create('familias', data)),
 
-    updateFamily: async (familyId, familyData) => {
-        return runMock(() => updateRecord(familias, familyId, familyData))
-    },
+    updateFamily: (familyId, data) => run(() => dataSource.update('familias', familyId, data)),
 
-    deleteFamily: async (familyId) => {
-        return runMock(() => deleteRecord(familias, familyId))
-    },
+    deleteFamily: (familyId) => run(() => dataSource.remove('familias', familyId)),
 
     // ==================== PERSONAS ====================
 
-    getAllPersons: async (filters = {}) => {
-        return runMock(() => {
-            let result = personas
-            if (filters.familia_id) {
-                result = result.filter((p) => String(p.id_familia) === String(filters.familia_id))
-            }
-            if (filters.puede_votar !== undefined) {
-                result = result.filter((p) => String(p.puede_votar) === String(filters.puede_votar))
-            }
-            if (filters.limit) {
-                result = result.slice(0, parseInt(filters.limit, 10))
-            }
-            return result
-        })
-    },
+    getAllPersons: (filters = {}) =>
+        run(async () => {
+            const puedeVotar = filters.puede_votar === undefined ? undefined : ['1', 'true'].includes(String(filters.puede_votar))
+            let rows = (await dataSource.list('personas', filters)).filter(
+                (p) => puedeVotar === undefined || (p.puede_votar === true || p.puede_votar === 1) === puedeVotar
+            )
+            rows = filterBy(rows, { id_familia: filters.familia_id })
+            if (filters.limit) rows = rows.slice(0, parseInt(filters.limit, 10))
+            return rows
+        }),
 
-    getPersonById: async (personId) => {
-        return runMock(() => findById(personas, personId))
-    },
+    getPersonById: (personId) =>
+        run(async () => {
+            const found = (await dataSource.list('personas')).find((p) => String(p.id) === String(personId))
+            if (!found) throw new Error('Persona no encontrada')
+            return found
+        }),
 
-    createPerson: async (personData) => {
-        return runMock(() => createRecord(personas, personData))
-    },
+    createPerson: (data) => run(() => dataSource.create('personas', data)),
 
-    updatePerson: async (personId, personData) => {
-        return runMock(() => updateRecord(personas, personId, personData))
-    },
+    updatePerson: (personId, data) => run(() => dataSource.update('personas', personId, data)),
 
-    deletePerson: async (personId) => {
-        return runMock(() => deleteRecord(personas, personId))
-    },
+    deletePerson: (personId) => run(() => dataSource.remove('personas', personId)),
 
     // ==================== BÚSQUEDA ====================
 
-    search: async (searchTerm) => {
-        return runMock(() => {
-            const term = String(searchTerm || '').toLowerCase()
-            if (!term) return []
-            return personas.filter((p) =>
-                p.curp.toLowerCase().includes(term) ||
-                `${p.nombre} ${p.apellidos}`.toLowerCase().includes(term) ||
-                p.telefono.includes(term) ||
-                (p.direccion || '').toLowerCase().includes(term)
-            )
-        })
-    },
+    // CURP, nombre, teléfono o dirección
+    search: (searchTerm) =>
+        run(async () => {
+            if (!String(searchTerm || '').trim()) return []
+            if (dataSource.search) return dataSource.search(searchTerm)
+            return searchPersons(await loadIndex(), searchTerm)
+        }),
 
-    searchByCurp: async (curp) => {
-        return runMock(() => {
-            const persona = personas.find((p) => p.curp.toLowerCase() === String(curp).toLowerCase())
-            if (!persona) throw new Error('No se encontró ninguna persona con ese CURP')
-            return persona
-        })
-    },
+    searchByCurp: (curp) =>
+        run(async () => {
+            const found = (await dataSource.list('personas')).find((p) => sameText(p.curp, curp))
+            if (!found) throw new Error('No se encontró ninguna persona con ese CURP')
+            return found
+        }),
+
+    // ==================== VISTAS PARA LAS PANTALLAS ====================
+    // Devuelven exactamente lo que necesita cada página (ya unido y listo para pintar).
+
+    getColoniasView: () => run(async () => buildColoniasView(await loadIndex())),
+
+    getFamiliasView: () => run(async () => buildFamiliasView(await loadIndex())),
+
+    getReportFilters: () => run(async () => buildReportFilters(await loadIndex())),
+
+    getReport: (filters) => run(async () => buildReport(await loadIndex(), filters)),
+
+    /**
+     * Guarda el formulario de familia (crear o editar) con sus miembros.
+     * formData = { name, address, state, delegation, colony, status, members: [{ id?, name, curp, age, gender, phone, role }] }
+     */
+    saveFamilyView: (familyId, formData) =>
+        run(async () => {
+            const index = await loadIndex()
+            if (!String(formData.name || '').trim()) throw new Error('El nombre de la familia es obligatorio')
+            if (!String(formData.address || '').trim()) throw new Error('La dirección es obligatoria')
+
+            const colonia = resolveColonia(index, formData)
+            // Validar a todos los miembros antes de escribir nada
+            formData.members.forEach((member) => memberToPerson(member, familyId))
+
+            const payload = {
+                id_colonia: colonia.id,
+                nombre_familia: formData.name.trim(),
+                direccion: formData.address.trim(),
+                estado: formData.status === 'Inactiva' ? 'INACTIVA' : 'ACTIVA',
+            }
+
+            const familia = familyId
+                ? await dataSource.update('familias', familyId, payload)
+                : await dataSource.create('familias', payload)
+            const id = familia?.id ?? familyId
+
+            const existing = familyId ? index.personasDe(familyId) : []
+            const keptIds = new Set(formData.members.filter((m) => m.id).map((m) => String(m.id)))
+
+            for (const person of existing) {
+                if (!keptIds.has(String(person.id))) await dataSource.remove('personas', person.id)
+            }
+            for (const member of formData.members) {
+                const person = memberToPerson(member, id)
+                if (member.id) await dataSource.update('personas', member.id, person)
+                else await dataSource.create('personas', person)
+            }
+
+            return { id }
+        }),
 
     // ==================== REPORTES ====================
 
-    generateStateReport: async (stateId) => {
-        return runMock(() => {
-            const estado = findById(estados, stateId)
-            return {
-                estado: estado.nombre,
-                families: countFamiliasEnEstado(estado.id),
-                persons: countPersonasEnEstado(estado.id),
-                generado: new Date().toISOString(),
-            }
-        })
-    },
+    generateStateReport: (stateId) =>
+        run(async () => {
+            const detail = buildStateDetail(await loadIndex(), stateId)
+            return { estado: detail.name, families: detail.families, persons: detail.persons, generado: new Date().toISOString() }
+        }),
 
-    generateDelegationReport: async (delegationId) => {
-        return runMock(() => {
-            const delegacion = findById(delegaciones, delegationId)
+    generateDelegationReport: (delegationId) =>
+        run(async () => {
+            const index = await loadIndex()
+            const delegacion = index.delegacionPorId.get(String(delegationId))
+            if (!delegacion) throw new Error('Delegación no encontrada')
+            const familias = index.familiasDeColonias(index.coloniasDe(delegacion.id))
             return {
                 delegacion: delegacion.nombre,
-                families: countFamiliasEnDelegacion(delegacion.id),
-                persons: countPersonasEnDelegacion(delegacion.id),
+                families: familias.length,
+                persons: index.personasDeFamilias(familias).length,
                 generado: new Date().toISOString(),
             }
-        })
-    },
+        }),
 
-    exportToCSV: async (type, id) => {
-        return runMock(() => ({ type, id, mensaje: 'Exportación simulada (sin backend real)' }))
-    },
+    /**
+     * Descarga un CSV. type: 'families' | 'persons'.
+     * En modo real lo genera el backend; en modo mock se arma en el navegador.
+     */
+    exportToCSV: (type = 'families', id) =>
+        run(async () => {
+            if (!CSV_COLUMNS[type]) throw new Error(`Tipo de exportación no soportado: ${type}`)
+
+            if (dataSource.exportFile) {
+                const { blob, filename } = await dataSource.exportFile(type, id)
+                downloadBlob(blob, filename)
+                return { type, filename }
+            }
+
+            const index = await loadIndex()
+            const rows = type === 'families' ? buildFamiliasView(index) : index.tables.personas
+            const csv = toCsv(rows, CSV_COLUMNS[type])
+            const filename = `${type}-${new Date().toISOString().slice(0, 10)}.csv`
+            downloadBlob(new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' }), filename)
+            return { type, filename, rows: rows.length }
+        }),
 
     // ==================== ESTADÍSTICAS AVANZADAS ====================
 
-    getCoverageAnalytics: async () => {
-        return runMock(() =>
-            estados.map((estado) => {
-                const persons = countPersonasEnEstado(estado.id)
-                return {
-                    estado: estado.nombre,
-                    families: countFamiliasEnEstado(estado.id),
-                    persons,
-                }
-            })
-        )
-    },
+    getCoverageAnalytics: () => run(async () => buildCoverageAnalytics(await loadIndex())),
 
-    getGrowthTrends: async (period = 'monthly') => {
-        return runMock(() => ({
+    getGrowthTrends: (period = 'monthly') =>
+        run(async () => ({
             period,
-            trend: [4, 6, 5, 8, 7, 9],
-        }))
-    },
-
+            trend: buildMonthlySummary(await loadIndex()).map((m) => m.familias),
+        })),
 }
 
 export default ElectoralApi

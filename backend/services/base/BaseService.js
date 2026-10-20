@@ -47,7 +47,7 @@ class BaseService {
     } = options;
 
     const offset = (page - 1) * limit;
-    const cacheKey = `${this.tableName}:all:${page}:${limit}:${orderBy}:${orderDirection}:${where}`;
+    const cacheKey = `${this.tableName}:all:${page}:${limit}:${orderBy}:${orderDirection}:${where}:${JSON.stringify(params)}`;
 
     // Intentar obtener del caché
     const cached = this.cache.get(cacheKey);

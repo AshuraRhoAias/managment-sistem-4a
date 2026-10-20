@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import ElectoralApi from '@/Utils/ElectoralDashboard/ElectoralApi';
+import useApiData from '@/hooks/useApiData';
+import DataState from '@/Components/DataState';
 
 // ==================== FILTER SELECT ====================
 export const FilterSelect = ({ label, value, onChange, options, placeholder = "Seleccionar..." }) => {
@@ -267,98 +270,13 @@ const ReportesAnalisis = () => {
     const [selectedColony, setSelectedColony] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
 
-    const familias = [
-        {
-            id: 1,
-            name: 'González García',
-            state: 'Ciudad de México',
-            delegation: 'Cuauhtémoc',
-            colony: 'Centro',
-            jefe: 'Juan González López',
-            persons: 4
-        },
-        {
-            id: 2,
-            name: 'López Martínez',
-            state: 'Ciudad de México',
-            delegation: 'Cuauhtémoc',
-            colony: 'Centro',
-            jefe: 'María López Mendoza',
-            persons: 3
-        },
-        {
-            id: 3,
-            name: 'Rodríguez Santos',
-            state: 'Ciudad de México',
-            delegation: 'Cuauhtémoc',
-            colony: 'Centro',
-            jefe: 'Carlos Rodríguez Pérez',
-            persons: 5
-        },
-        {
-            id: 4,
-            name: 'Hernández Ruiz',
-            state: 'Ciudad de México',
-            delegation: 'Cuauhtémoc',
-            colony: 'Santa María la Redonda',
-            jefe: 'Ana Hernández Cruz',
-            persons: 2
-        },
-        {
-            id: 5,
-            name: 'Torres Jiménez',
-            state: 'Ciudad de México',
-            delegation: 'Cuauhtémoc',
-            colony: 'Santa María la Redonda',
-            jefe: 'Miguel Torres Jiménez',
-            persons: 3
-        },
-        {
-            id: 6,
-            name: 'Díaz Álvarez',
-            state: 'Ciudad de México',
-            delegation: 'Benito Juárez',
-            colony: 'Narvarte Oriente',
-            jefe: 'Francisco Díaz Álvarez',
-            persons: 4
-        },
-        {
-            id: 7,
-            name: 'Morales Castillo',
-            state: 'Ciudad de México',
-            delegation: 'Benito Juárez',
-            colony: 'Del Valle',
-            jefe: 'Gabriela Morales Castillo',
-            persons: 3
-        },
-        {
-            id: 8,
-            name: 'Ramírez Flores',
-            state: 'Estado de México',
-            delegation: 'Ecatepec de Morelos',
-            colony: 'Las Américas',
-            jefe: 'Roberto Ramírez Flores',
-            persons: 5
-        },
-        {
-            id: 9,
-            name: 'Sánchez Vega',
-            state: 'Estado de México',
-            delegation: 'Nezahualcóyotl',
-            colony: 'Metropolitana',
-            jefe: 'Laura Sánchez Vega',
-            persons: 3
-        },
-        {
-            id: 10,
-            name: 'Pérez Guzmán',
-            state: 'Jalisco',
-            delegation: 'Guadalajara',
-            colony: 'Chapultepec',
-            jefe: 'Alberto Pérez Guzmán',
-            persons: 4
-        }
-    ];
+    const { data, loading, error, reload } = useApiData(ElectoralApi.getFamiliasView);
+    const familias = data || [];
+
+    const handleExport = async () => {
+        const result = await ElectoralApi.exportToCSV('families');
+        if (!result.success) alert(result.error);
+    };
 
     const states = [...new Set(familias.map(f => f.state))];
     const delegations = [...new Set(familias.map(f => f.delegation))];
@@ -380,9 +298,9 @@ const ReportesAnalisis = () => {
 
     const totalPersonas = filteredFamilias.reduce((sum, familia) => sum + familia.persons, 0);
 
-    // Calcular personas por género (ejemplo con datos ficticios)
-    const masculino = Math.floor(totalPersonas * 0.53);
-    const femenino = totalPersonas - masculino;
+    const members = filteredFamilias.flatMap(familia => familia.members);
+    const femenino = members.filter(m => m.gender.toLowerCase().startsWith('f')).length;
+    const masculino = members.length - femenino;
 
     const css = `
     .reportes-container {
@@ -592,6 +510,16 @@ const ReportesAnalisis = () => {
                     </div>
                 </div>
 
+                <DataState loading={loading} error={error} onRetry={reload}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+                        <button
+                            onClick={handleExport}
+                            style={{ padding: '10px 18px', border: 'none', borderRadius: '8px', backgroundColor: '#2563eb', color: 'white', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                            Exportar CSV
+                        </button>
+                    </div>
+
                 <div className="stats-grid">
                     <StatCardSimple
                         label="Familias"
@@ -639,6 +567,7 @@ const ReportesAnalisis = () => {
                         </table>
                     </div>
                 </div>
+                </DataState>
             </div>
         </>
     );

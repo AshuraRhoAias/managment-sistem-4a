@@ -8,6 +8,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import ElectoralApi from '@/Utils/ElectoralDashboard/ElectoralApi';
 
+// Referencia estable: un `{}` nuevo por render re-dispararía el efecto de carga en bucle
+const NO_FILTERS = {};
+
 /**
  * Hook para manejo de estados
  */
@@ -19,7 +22,7 @@ export function useEstados() {
   const fetchEstados = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = await ElectoralApi.getAllStates();
+    const result = await ElectoralApi.listStates();
 
     if (result.success) {
       setEstados(result.data);
@@ -231,7 +234,7 @@ export function useColonias(delegacionId = null) {
 /**
  * Hook para manejo de familias
  */
-export function useFamilias(filters = {}) {
+export function useFamilias(filters = NO_FILTERS) {
   const [familias, setFamilias] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -311,7 +314,7 @@ export function useFamilias(filters = {}) {
 /**
  * Hook para manejo de personas
  */
-export function usePersonas(filters = {}) {
+export function usePersonas(filters = NO_FILTERS) {
   const [personas, setPersonas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

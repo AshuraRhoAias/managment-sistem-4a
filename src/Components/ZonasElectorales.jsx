@@ -1,4 +1,9 @@
 import React, { useState } from 'react';
+import ElectoralApi from '@/Utils/ElectoralDashboard/ElectoralApi';
+import useApiData from '@/hooks/useApiData';
+import DataState from '@/Components/DataState';
+import TabBar from '@/Components/TabBar';
+import { EstadosManager, DelegacionesManager, ColoniasManager } from '@/Components/Electoral';
 
 // ==================== FILTER SELECT ====================
 export const FilterSelect = ({ label, value, onChange, options, placeholder = "Seleccionar..." }) => {
@@ -429,78 +434,16 @@ const ZonasElectorales = () => {
     const [selectedDelegation, setSelectedDelegation] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
 
-    const colonias = [
-        {
-            id: 1,
-            name: 'Centro',
-            delegation: 'Cuauhtémoc',
-            state: 'Ciudad de México',
-            cp: '06500',
-            families: 3,
-            persons: 12,
-            coverage: 54
-        },
-        {
-            id: 2,
-            name: 'Santa María la Redonda',
-            delegation: 'Cuauhtémoc',
-            state: 'Ciudad de México',
-            cp: '06520',
-            families: 2,
-            persons: 5,
-            coverage: 41
-        },
-        {
-            id: 3,
-            name: 'Narvarte Oriente',
-            delegation: 'Benito Juárez',
-            state: 'Ciudad de México',
-            cp: '03023',
-            families: 1,
-            persons: 4,
-            coverage: 20
-        },
-        {
-            id: 4,
-            name: 'Del Valle',
-            delegation: 'Benito Juárez',
-            state: 'Ciudad de México',
-            cp: '03100',
-            families: 1,
-            persons: 3,
-            coverage: 27
-        },
-        {
-            id: 5,
-            name: 'Las Américas',
-            delegation: 'Ecatepec de Morelos',
-            state: 'Estado de México',
-            cp: '55070',
-            families: 1,
-            persons: 5,
-            coverage: 35
-        },
-        {
-            id: 6,
-            name: 'Metropolitana',
-            delegation: 'Nezahualcóyotl',
-            state: 'Estado de México',
-            cp: '57500',
-            families: 1,
-            persons: 3,
-            coverage: 76
-        },
-        {
-            id: 7,
-            name: 'Chapultepec',
-            delegation: 'Guadalajara',
-            state: 'Jalisco',
-            cp: '44610',
-            families: 1,
-            persons: 4,
-            coverage: 26
-        }
-    ];
+    const [tab, setTab] = useState('resumen');
+    const { data, loading, error, reload } = useApiData(ElectoralApi.getColoniasView);
+    const colonias = data || [];
+
+    const handleDelete = async (colonia) => {
+        if (!window.confirm(`¿Eliminar la colonia ${colonia.name}?`)) return;
+        const result = await ElectoralApi.deleteColony(colonia.id);
+        if (result.success) reload();
+        else alert(result.error);
+    };
 
     const states = [...new Set(colonias.map(c => c.state))];
     const delegations = [...new Set(colonias.map(c => c.delegation))];
@@ -531,8 +474,8 @@ const ZonasElectorales = () => {
             header: 'Acciones',
             render: (row) => (
                 <ActionButtons
-                    onEdit={() => alert(`Editar ${row.name}`)}
-                    onDelete={() => alert(`Eliminar ${row.name}`)}
+                    onEdit={() => setTab('colonias')}
+                    onDelete={() => handleDelete(row)}
                 />
             )
         }
@@ -589,35 +532,57 @@ const ZonasElectorales = () => {
                     subtitle="Gestión de zonas electorales y colonias"
                 />
 
-                <div className="filters-section">
-                    <FilterSelect
-                        label="Estado"
-                        value={selectedState}
-                        onChange={(e) => setSelectedState(e.target.value)}
-                        options={states}
-                        placeholder="Todos los estados"
-                    />
-
-                    <FilterSelect
-                        label="Delegación/Alcaldía"
-                        value={selectedDelegation}
-                        onChange={(e) => setSelectedDelegation(e.target.value)}
-                        options={delegations}
-                        placeholder="Todas las delegaciones"
-                    />
-
-                    <FilterSearchInput
-                        label="Buscar"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Colonia..."
-                    />
-                </div>
-
-                <Table
-                    columns={tableColumns}
-                    data={filteredColonias}
+                <TabBar
+                    tabs={[
+                        { id: 'resumen', label: 'Resumen' },
+                        { id: 'estados', label: 'Estados' },
+                        { id: 'delegaciones', label: 'Delegaciones' },
+                        { id: 'colonias', label: 'Administrar colonias' },
+                    ]}
+                    active={tab}
+                    onChange={(next) => {
+                        setTab(next);
+                        if (next === 'resumen') reload();
+                    }}
                 />
+
+                {tab === 'estados' && <EstadosManager />}
+                {tab === 'delegaciones' && <DelegacionesManager />}
+                {tab === 'colonias' && <ColoniasManager />}
+
+                {tab === 'resumen' && (
+                    <DataState loading={loading} error={error} onRetry={reload}>
+                    <div className="filters-section">
+                        <FilterSelect
+                            label="Estado"
+                            value={selectedState}
+                            onChange={(e) => setSelectedState(e.target.value)}
+                            options={states}
+                            placeholder="Todos los estados"
+                        />
+
+                        <FilterSelect
+                            label="Delegación/Alcaldía"
+                            value={selectedDelegation}
+                            onChange={(e) => setSelectedDelegation(e.target.value)}
+                            options={delegations}
+                            placeholder="Todas las delegaciones"
+                        />
+
+                        <FilterSearchInput
+                            label="Buscar"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Colonia..."
+                        />
+                    </div>
+
+                    <Table
+                        columns={tableColumns}
+                        data={filteredColonias}
+                    />
+                    </DataState>
+                )}
             </div>
         </>
     );

@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { sessionCache } = require('../config/cache');
 const { readPool } = require('../config/database');
+const { toPublicUser } = require('../services/base/userProfile');
 const { SECURITY, ERRORS, HTTP_STATUS, PERMISSIONS } = require('../config/constants');
 
 /**
@@ -55,9 +56,9 @@ class AuthMiddleware {
         sessionCache.set(sessionKey, rows[0], 1800);
       }
 
-      // Obtener información del usuario
+      // Obtener información del usuario (nombre, email y rol viven cifrados en la BD)
       const [userRows] = await readPool.query(
-        'SELECT id, nombre, email, rol, activo FROM usuarios WHERE id = ?',
+        'SELECT * FROM usuarios WHERE id = ?',
         [decoded.userId]
       );
 
@@ -69,12 +70,15 @@ class AuthMiddleware {
         });
       }
 
-      // Agregar usuario al request
+      const profile = await toPublicUser(userRows[0]);
+
+      // Agregar usuario al request (userId es el alias que usan los servicios para auditoría)
       req.user = {
-        id: userRows[0].id,
-        nombre: userRows[0].nombre,
-        email: userRows[0].email,
-        rol: userRows[0].rol,
+        id: profile.id,
+        userId: profile.id,
+        nombre: profile.nombre,
+        email: profile.email,
+        rol: profile.rol,
         jti: decoded.jti,
       };
 
