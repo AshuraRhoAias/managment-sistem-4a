@@ -16,6 +16,7 @@ const coloniasService = require('../services/colonias.service');
 const familiasService = require('../services/familias.service');
 const personasService = require('../services/personas.service');
 const dashboardService = require('../services/dashboard.service');
+const reportesService = require('../services/reportes.service');
 
 /**
  * ============================================
@@ -590,6 +591,52 @@ router.delete('/persons/:id', authMiddleware.requireRole(['ADMIN']), async (req,
       success: true,
       data: result
     });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * ============================================
+ * BÚSQUEDA Y EXPORTACIÓN
+ * ============================================
+ */
+
+// GET /api/electoral/search?q=termino - Buscar por CURP, nombre, teléfono o dirección
+router.get('/search', async (req, res) => {
+  try {
+    const results = await reportesService.searchPersonas(req.query.q);
+    res.json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// GET /api/electoral/export/:type?format=csv - Exportar familias o personas
+router.get('/export/:type', authMiddleware.requireRole(['ADMIN', 'COORDINADOR']), async (req, res) => {
+  try {
+    if ((req.query.format || 'csv') !== 'csv') {
+      return res.status(400).json({
+        success: false,
+        message: 'Formato no soportado. Usa format=csv'
+      });
+    }
+
+    const { filename, csv } = await reportesService.exportCsv(req.params.type);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    // BOM para que Excel respete los acentos
+    res.send('\ufeff' + csv);
   } catch (error) {
     res.status(400).json({
       success: false,

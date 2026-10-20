@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "cluster": "node cluster.js",
-    "test": "jest --coverage",
+    "test": "jest --forceExit",
     "lint": "eslint .",
     "migration": "node utils/migration.js"
   },
@@ -55,5 +55,11 @@
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
   }
 }

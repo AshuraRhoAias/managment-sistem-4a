@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import ElectoralApi from '@/Utils/ElectoralDashboard/ElectoralApi';
+import useApiData from '@/hooks/useApiData';
+import DataState from '@/Components/DataState';
 
 // ==================== COMPONENTES REUTILIZABLES ====================
 
@@ -531,56 +534,63 @@ const ReportFooter = () => {
 
 // ==================== PÁGINA PRINCIPAL ====================
 const GenerarReportesPage = () => {
-    const [selectedState, setSelectedState] = useState('cdmx');
+    const [selectedState, setSelectedState] = useState('all');
     const [selectedDelegation, setSelectedDelegation] = useState('all');
     const [selectedColony, setSelectedColony] = useState('all');
     const [showReport, setShowReport] = useState(false);
+    const [report, setReport] = useState(null);
+    const [generating, setGenerating] = useState(false);
 
-    const familiesData = [
-        {
-            name: 'González García',
-            head: 'Juan González López',
-            colony: 'Centro',
-            address: 'Calle 5 de Mayo 123, Centro, Cuauhtémoc, Ciudad de México',
-            members: [
-                { name: 'Juan González López', curp: 'GOLJ001', age: 45, gender: 'M', votes: 'Sí' },
-                { name: 'María García Ruiz', curp: 'GARM001', age: 42, gender: 'F', votes: 'Sí' },
-                { name: 'Carlos González García', curp: 'GOGC001', age: 18, gender: 'M', votes: 'Sí' },
-                { name: 'Ana González García', curp: 'GOGA001', age: 15, gender: 'F', votes: 'No' }
-            ],
-            summary: { voters: 3, turning18: 0, in2years: 0 }
-        },
-        {
-            name: 'Díaz Álvarez',
-            head: 'Francisco Díaz Álvarez',
-            colony: 'Narvarte Oriente',
-            address: 'Calle Chihuahua 890, Narvarte Oriente, Benito Juárez, Ciudad de México',
-            members: [
-                { name: 'Francisco Díaz Álvarez', curp: 'DIAF001', age: 51, gender: 'M', votes: 'Sí' },
-                { name: 'Cecilia Álvarez Rivas', curp: 'ALVAOC01', age: 49, gender: 'F', votes: 'Sí' },
-                { name: 'Gloria Díaz Álvarez', curp: 'DIAG001', age: 25, gender: 'F', votes: 'Sí' },
-                { name: 'Raúl Díaz Álvarez', curp: 'DIAR001', age: 21, gender: 'M', votes: 'Sí' }
-            ],
-            summary: { voters: 4, turning18: 0, in2years: 0 }
-        },
-        {
-            name: 'Morales Castillo',
-            head: 'Gabriela Morales Castillo',
-            colony: 'Del Valle',
-            address: 'Calle Orinaba 1234, Del Valle, Benito Juárez, Ciudad de México',
-            members: [
-                { name: 'Gabriela Morales Castillo', curp: 'MOCG001', age: 43, gender: 'F', votes: 'Sí' },
-                { name: 'Eduardo Castillo Mendoza', curp: 'CAME001', age: 45, gender: 'M', votes: 'Sí' },
-                { name: 'Valentina Morales Castillo', curp: 'MOCV001', age: 17, gender: 'F', votes: 'Prox. año' }
-            ],
-            summary: { voters: 2, turning18: 1, in2years: 0 }
-        }
+    const { data: filterData, loading, error, reload } = useApiData(ElectoralApi.getReportFilters);
+
+    const all = (label) => ({ value: 'all', label });
+    const estadoOptions = [all('Todos los estados'), ...(filterData?.estados || [])];
+    const delegacionOptions = [
+        all('Todas las delegaciones'),
+        ...(filterData?.delegaciones || []).filter(d => selectedState === 'all' || d.parent === selectedState)
+    ];
+    const coloniaOptions = [
+        all('Todas las colonias'),
+        ...(filterData?.colonias || []).filter(c => {
+            if (selectedDelegation !== 'all') return c.parent === selectedDelegation;
+            if (selectedState === 'all') return true;
+            return delegacionOptions.some(d => d.value === c.parent);
+        })
     ];
 
-    const totalPersons = familiesData.reduce((sum, f) => sum + f.members.length, 0);
-    const totalVoters = familiesData.reduce((sum, f) => f.summary.voters, 0);
-    const totalTurning18 = familiesData.reduce((sum, f) => f.summary.turning18, 0);
-    const totalIn2Years = familiesData.reduce((sum, f) => f.summary.in2years, 0);
+    const handleStateChange = (value) => {
+        setSelectedState(value);
+        setSelectedDelegation('all');
+        setSelectedColony('all');
+    };
+
+    const handleDelegationChange = (value) => {
+        setSelectedDelegation(value);
+        setSelectedColony('all');
+    };
+
+    const handleGenerate = async () => {
+        setGenerating(true);
+        const result = await ElectoralApi.getReport({
+            estadoId: selectedState,
+            delegacionId: selectedDelegation,
+            coloniaId: selectedColony
+        });
+        setGenerating(false);
+
+        if (!result.success) {
+            alert(result.error);
+            return;
+        }
+        setReport(result.data);
+        setShowReport(true);
+    };
+
+    const familiesData = report?.families || [];
+    const totalPersons = report?.totals.persons || 0;
+    const totalVoters = report?.totals.voters || 0;
+    const totalTurning18 = report?.totals.turning18 || 0;
+    const totalIn2Years = report?.totals.in2years || 0;
 
     return (
         <>
@@ -616,38 +626,33 @@ const GenerarReportesPage = () => {
                         subtitle="Selecciona un área para generar un reporte detallado"
                     />
 
-                    <FilterCard>
-                        <FilterDropdown
-                            label="Estado"
-                            value={selectedState}
-                            onChange={(e) => setSelectedState(e.target.value)}
-                            options={[
-                                { value: 'cdmx', label: 'Ciudad de México' },
-                                { value: 'edomex', label: 'Estado de México' }
-                            ]}
-                        />
-                        <FilterDropdown
-                            label="Delegación/Alcaldía"
-                            value={selectedDelegation}
-                            onChange={(e) => setSelectedDelegation(e.target.value)}
-                            options={[
-                                { value: 'all', label: 'Todas (en esta delegación)' },
-                                { value: 'cuauhtemoc', label: 'Cuauhtémoc' },
-                                { value: 'bjuarez', label: 'Benito Juárez' }
-                            ]}
-                        />
-                        <FilterDropdown
-                            label="Colonia"
-                            value={selectedColony}
-                            onChange={(e) => setSelectedColony(e.target.value)}
-                            options={[
-                                { value: 'all', label: 'Todas (en esta delegación)' },
-                                { value: 'centro', label: 'Centro' },
-                                { value: 'narvarte', label: 'Narvarte Oriente' }
-                            ]}
-                        />
-                        {!showReport && <GenerateButton onClick={() => setShowReport(true)} />}
-                    </FilterCard>
+                    <DataState loading={loading} error={error} onRetry={reload}>
+                        <FilterCard>
+                            <FilterDropdown
+                                label="Estado"
+                                value={selectedState}
+                                onChange={(e) => handleStateChange(e.target.value)}
+                                options={estadoOptions}
+                            />
+                            <FilterDropdown
+                                label="Delegación/Alcaldía"
+                                value={selectedDelegation}
+                                onChange={(e) => handleDelegationChange(e.target.value)}
+                                options={delegacionOptions}
+                            />
+                            <FilterDropdown
+                                label="Colonia"
+                                value={selectedColony}
+                                onChange={(e) => setSelectedColony(e.target.value)}
+                                options={coloniaOptions}
+                            />
+                            {!showReport && (
+                                <GenerateButton onClick={handleGenerate}>
+                                    {generating ? 'Generando...' : 'Generar Reporte'}
+                                </GenerateButton>
+                            )}
+                        </FilterCard>
+                    </DataState>
                 </div>
 
                 {showReport && (
@@ -685,8 +690,11 @@ const GenerarReportesPage = () => {
                                 margin: '32px 0 20px 0'
                             }}>Desglose por Familias</h3>
 
-                            {familiesData.map((family, idx) => (
-                                <FamilyCard key={idx} family={family} />
+                            {familiesData.length === 0 && (
+                                <p style={{ color: '#6b7280' }}>No hay familias registradas en el área seleccionada.</p>
+                            )}
+                            {familiesData.map((family) => (
+                                <FamilyCard key={family.id} family={family} />
                             ))}
 
                             <ReportFooter />

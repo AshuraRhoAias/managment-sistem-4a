@@ -4,7 +4,8 @@ const authMiddleware = require('../middleware/auth.middleware');
 const securityMiddleware = require('../middleware/security.middleware');
 const advancedSecurity = require('../middleware/advanced-security.middleware');
 const cryptoService = require('./base/CryptoService');
-const { SECURITY, ERRORS } = require('../config/constants');
+const { toPublicUser } = require('./base/userProfile');
+const { SECURITY, ERRORS, ROLES } = require('../config/constants');
 
 /**
  * ============================================
@@ -13,6 +14,70 @@ const { SECURITY, ERRORS } = require('../config/constants');
  */
 
 class AuthService {
+  /**
+   * Registro público de usuario.
+   * El rol siempre es CAPTURISTA: ADMIN/COORDINADOR solo los asigna un administrador.
+   */
+  async register(nombre, email, password) {
+    const cleanNombre = String(nombre || '').trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+
+    if (!cleanNombre || !cleanEmail || !password) {
+      throw new Error('Nombre, email y contraseña son obligatorios');
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new Error('El email no es válido');
+    }
+
+    if (String(password).length < 8) {
+      throw new Error('La contraseña debe tener al menos 8 caracteres');
+    }
+
+    // El email está cifrado, así que hay que descifrar los existentes para detectar duplicados
+    const [users] = await readPool.query('SELECT * FROM usuarios');
+
+    for (const u of users) {
+      let existing = null;
+      try {
+        existing = await cryptoService.decrypt({
+          encrypted: u.email_encrypted,
+          iv: u.email_iv,
+          authTag: u.email_tag
+        });
+      } catch {
+        continue; // dato corrupto: no cuenta como duplicado
+      }
+
+      if (String(existing).toLowerCase() === cleanEmail) {
+        throw new Error('El email ya está registrado');
+      }
+    }
+
+    const rol = ROLES.CAPTURISTA;
+    const encryptedNombre = await cryptoService.encrypt(cleanNombre);
+    const encryptedEmail = await cryptoService.encrypt(cleanEmail);
+    const encryptedRol = await cryptoService.encrypt(rol);
+    const hashedPassword = await bcrypt.hash(password, SECURITY.BCRYPT_SALT_ROUNDS);
+
+    const [result] = await writePool.query(
+      `INSERT INTO usuarios (
+        nombre_encrypted, nombre_iv, nombre_tag,
+        email_encrypted, email_iv, email_tag,
+        rol_encrypted, rol_iv, rol_tag,
+        password, activo
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        encryptedNombre.encrypted, encryptedNombre.iv, encryptedNombre.authTag,
+        encryptedEmail.encrypted, encryptedEmail.iv, encryptedEmail.authTag,
+        encryptedRol.encrypted, encryptedRol.iv, encryptedRol.authTag,
+        hashedPassword
+      ]
+    );
+
+    return { id: result.insertId, nombre: cleanNombre, email: cleanEmail, rol };
+  }
+
   /**
    * Login de usuario
    */
@@ -41,7 +106,7 @@ class AuthService {
             authTag: u.email_tag
           });
 
-          if (decryptedEmail === email) {
+          if (String(decryptedEmail).toLowerCase() === String(email).trim().toLowerCase()) {
             user = u;
             break;
           }
@@ -212,12 +277,7 @@ class AuthService {
 
       return {
         token,
-        user: {
-          id: user.id,
-          nombre: user.nombre,
-          email: user.email,
-          rol: user.rol,
-        },
+        user: await toPublicUser(user),
       };
     } catch (error) {
       throw error;
@@ -359,7 +419,7 @@ class AuthService {
   async getCurrentUser(userId) {
     try {
       const [users] = await readPool.query(
-        'SELECT id, nombre, email, rol, created_at, last_login FROM usuarios WHERE id = ? AND activo = 1',
+        'SELECT * FROM usuarios WHERE id = ? AND activo = 1',
         [userId]
       );
 
@@ -367,7 +427,7 @@ class AuthService {
         throw new Error('Usuario no encontrado');
       }
 
-      return users[0];
+      return await toPublicUser(users[0]);
     } catch (error) {
       throw error;
     }

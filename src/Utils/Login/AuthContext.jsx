@@ -93,6 +93,8 @@ export function AuthProvider({ children }) {
     }
 
     const logout = () => {
+        // Revoca la sesión en el servidor (con backend real); el cierre local no espera la respuesta
+        apiClient.logout().catch(() => {})
         CookieManager.clearAll()
         SecureStorage.removeUser()
 

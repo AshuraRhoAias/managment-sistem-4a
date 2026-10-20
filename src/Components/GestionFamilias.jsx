@@ -1,4 +1,9 @@
 import React, { useState } from 'react';
+import ElectoralApi from '@/Utils/ElectoralDashboard/ElectoralApi';
+import useApiData from '@/hooks/useApiData';
+import DataState from '@/Components/DataState';
+import TabBar from '@/Components/TabBar';
+import { PersonasManager } from '@/Components/Electoral';
 
 // ==================== FILTER SELECT ====================
 export const FilterSelect = ({ label, value, onChange, options, placeholder = "Seleccionar..." }) => {
@@ -1021,9 +1026,9 @@ export const FamilyEditModal = ({ family, onClose, onSave }) => {
     setFormData({ ...formData, members: newMembers });
   };
 
-  const handleSave = () => {
-    onSave(formData);
-    onClose();
+  const handleSave = async () => {
+    const saved = await onSave(formData);
+    if (saved !== false) onClose();
   };
 
   const css = `
@@ -1104,8 +1109,8 @@ export const FamilyEditModal = ({ family, onClose, onSave }) => {
       <style>{css}</style>
       <div className="modal-header">
         <div className="modal-title-section">
-          <h2 className="modal-title">Editar Familia {family.name}</h2>
-          <p className="modal-subtitle">Modificar información de la familia</p>
+          <h2 className="modal-title">{family.id ? `Editar Familia ${family.name}` : 'Nueva Familia'}</h2>
+          <p className="modal-subtitle">{family.id ? 'Modificar información de la familia' : 'Registrar una nueva familia y sus miembros'}</p>
         </div>
         <button className="modal-close" onClick={onClose}>
           <svg className="modal-close-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1427,118 +1432,9 @@ const GestionFamilias = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  const familias = [
-    {
-      id: 1,
-      name: 'González García',
-      jefe: 'Juan González López',
-      delegation: 'Cuauhtémoc',
-      colony: 'Centro',
-      persons: 4,
-      state: 'Ciudad de México',
-      status: 'Inactiva',
-      address: 'Calle 5 de Mayo 123',
-      registro: '2024-01-15',
-      members: [
-        { name: 'Juan González López', age: 45, gender: 'Masculino', role: 'JEFE DE FAMILIA', curp: 'GOLJ001', phone: '5551234567' },
-        { name: 'María García Ruiz', age: 42, gender: 'Femenino', role: 'MIEMBRO', curp: 'GARM001', phone: '5551234568' },
-        { name: 'Carlos González García', age: 18, gender: 'Masculino', role: 'MIEMBRO', curp: 'GOGC001', phone: '' },
-        { name: 'Ana González García', age: 15, gender: 'Femenino', role: 'MIEMBRO', curp: 'GOGA001', phone: '' }
-      ]
-    },
-    {
-      id: 2,
-      name: 'López Martínez',
-      jefe: 'María López Mendoza',
-      delegation: 'Cuauhtémoc',
-      colony: 'Centro',
-      persons: 3,
-      state: 'Ciudad de México',
-      status: 'Inactiva',
-      address: 'Av. Juárez 456',
-      registro: '2024-01-20',
-      members: [
-        { name: 'María López Mendoza', age: 38, gender: 'Femenino', role: 'JEFE DE FAMILIA', curp: 'LOMM001', phone: '5552345678' },
-        { name: 'Pedro Martínez Ruiz', age: 40, gender: 'Masculino', role: 'MIEMBRO', curp: 'MARP001', phone: '5552345679' },
-        { name: 'Sofía López Martínez', age: 12, gender: 'Femenino', role: 'MIEMBRO', curp: 'LOMS001', phone: '' }
-      ]
-    },
-    {
-      id: 3,
-      name: 'Rodríguez Santos',
-      jefe: 'Carlos Rodríguez Pérez',
-      delegation: 'Cuauhtémoc',
-      colony: 'Centro',
-      persons: 5,
-      state: 'Ciudad de México',
-      status: 'Inactiva',
-      address: 'Calle Madero 789',
-      registro: '2024-02-01',
-      members: [
-        { name: 'Carlos Rodríguez Pérez', age: 50, gender: 'Masculino', role: 'JEFE DE FAMILIA', curp: 'ROPC001', phone: '5553456789' }
-      ]
-    },
-    {
-      id: 4,
-      name: 'Hernández Ruiz',
-      jefe: 'Ana Hernández Cruz',
-      delegation: 'Cuauhtémoc',
-      colony: 'Santa María la Redonda',
-      persons: 2,
-      state: 'Ciudad de México',
-      status: 'Inactiva',
-      address: 'Calle Reforma 321',
-      registro: '2024-02-10',
-      members: [
-        { name: 'Ana Hernández Cruz', age: 35, gender: 'Femenino', role: 'JEFE DE FAMILIA', curp: 'HECA001', phone: '5554567890' }
-      ]
-    },
-    {
-      id: 5,
-      name: 'Torres Jiménez',
-      jefe: 'Miguel Torres Jiménez',
-      delegation: 'Cuauhtémoc',
-      colony: 'Santa María la Redonda',
-      persons: 3,
-      state: 'Ciudad de México',
-      status: 'Inactiva',
-      address: 'Av. Insurgentes 654',
-      registro: '2024-02-15',
-      members: [
-        { name: 'Miguel Torres Jiménez', age: 42, gender: 'Masculino', role: 'JEFE DE FAMILIA', curp: 'TOJM001', phone: '5555678901' }
-      ]
-    },
-    {
-      id: 6,
-      name: 'Díaz Álvarez',
-      jefe: 'Francisco Díaz Álvarez',
-      delegation: 'Benito Juárez',
-      colony: 'Narvarte Oriente',
-      persons: 4,
-      state: 'Ciudad de México',
-      status: 'Inactiva',
-      address: 'Calle Monterrey 987',
-      registro: '2024-03-01',
-      members: [
-        { name: 'Francisco Díaz Álvarez', age: 48, gender: 'Masculino', role: 'JEFE DE FAMILIA', curp: 'DIAF001', phone: '5556789012' }
-      ]
-    },
-    {
-      id: 7,
-      name: 'Morales Castillo',
-      jefe: 'Gabriela Morales Castillo',
-      delegation: 'Benito Juárez',
-      colony: 'Del Valle',
-      persons: 3,
-      state: 'Ciudad de México',
-      status: 'Inactiva',
-      address: 'Av. Universidad 147',
-      registro: '2024-03-10',
-      members: [
-        { name: 'Gabriela Morales Castillo', age: 33, gender: 'Femenino', role: 'JEFE DE FAMILIA', curp: 'MOCG001', phone: '5557890123' }
-      ]
-    }
-  ];
+  const [tab, setTab] = useState('familias');
+  const { data, loading, error, reload } = useApiData(ElectoralApi.getFamiliasView);
+  const familias = data || [];
 
   const states = [...new Set(familias.map(f => f.state))];
   const delegations = [...new Set(familias.map(f => f.delegation))];
@@ -1567,10 +1463,37 @@ const GestionFamilias = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (updatedFamily) => {
-    console.log('Familia actualizada:', updatedFamily);
-    alert('Familia guardada exitosamente');
-    // Aquí iría la lógica para actualizar la familia en tu base de datos
+  const handleCreate = () => {
+    setSelectedFamily({
+      id: null,
+      name: '',
+      address: '',
+      state: '',
+      delegation: '',
+      colony: '',
+      status: 'Activa',
+      members: [{ name: '', curp: '', age: '', gender: '', phone: '', role: 'JEFE DE FAMILIA' }]
+    });
+    setIsEditMode(true);
+    setIsModalOpen(true);
+  };
+
+  // Devuelve true si se guardó (el modal solo se cierra en ese caso)
+  const handleSave = async (updatedFamily) => {
+    const result = await ElectoralApi.saveFamilyView(selectedFamily?.id ?? null, updatedFamily);
+    if (!result.success) {
+      alert(result.error);
+      return false;
+    }
+    reload();
+    return true;
+  };
+
+  const handleDelete = async (familia) => {
+    if (!window.confirm(`¿Eliminar la familia ${familia.name} y todos sus miembros?`)) return;
+    const result = await ElectoralApi.deleteFamily(familia.id);
+    if (result.success) reload();
+    else alert(result.error);
   };
 
   const css = `
@@ -1750,6 +1673,22 @@ const GestionFamilias = () => {
           </div>
         </div>
 
+        <TabBar
+          tabs={[
+            { id: 'familias', label: 'Familias' },
+            { id: 'personas', label: 'Administrar personas' },
+          ]}
+          active={tab}
+          onChange={(next) => {
+            setTab(next);
+            if (next === 'familias') reload();
+          }}
+        />
+
+        {tab === 'personas' && <PersonasManager />}
+
+        {tab === 'familias' && (
+          <DataState loading={loading} error={error} onRetry={reload}>
         <div className="filters-section">
           <FilterSelect
             label="Estado"
@@ -1791,7 +1730,7 @@ const GestionFamilias = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             }
-            onClick={() => alert('Crear nueva familia')}
+            onClick={handleCreate}
           />
         </div>
 
@@ -1826,7 +1765,7 @@ const GestionFamilias = () => {
                       <ActionButtonsFamilia
                         onView={() => handleView(familia)}
                         onEdit={() => handleEdit(familia)}
-                        onDelete={() => alert(`Eliminar familia ${familia.name}`)}
+                        onDelete={() => handleDelete(familia)}
                       />
                     </td>
                   </tr>
@@ -1835,8 +1774,10 @@ const GestionFamilias = () => {
             </table>
           </div>
         </div>
+          </DataState>
+        )}
 
-        {selectedFamily && (
+        {tab === 'familias' && selectedFamily && (
           <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
             {isEditMode ? (
               <FamilyEditModal
